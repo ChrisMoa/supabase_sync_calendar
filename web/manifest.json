@@ -1,6 +1,6 @@
 {
-    "name": "flutter_base",
-    "short_name": "flutter_base",
+    "name": "supabase_sync_calendar",
+    "short_name": "supabase_sync_calendar",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

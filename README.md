@@ -1,4 +1,4 @@
-# flutter_base
+# supabase_sync_calendar
 
 A new Flutter project.
 
