@@ -1,0 +1,86 @@
+name: Flutter Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.3'
+          channel: 'stable'
+      - name: Ensure platform directories exist
+        run: flutter create --platforms=windows --org com.example . || true
+      - run: flutter clean || true
+      - run: flutter pub get || true
+      - run: flutter pub outdated || true
+      - run: flutter build windows --release
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: build/windows/runner/Release/
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.3'
+          channel: 'stable'
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+      - name: Ensure platform directories exist
+        run: flutter create --platforms=linux --org com.example . || true
+      - run: flutter clean || true
+      - run: flutter pub get || true
+      - run: flutter pub outdated || true
+      - run: flutter build linux --release
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-linux
+          path: build/linux/x64/release/bundle/
+          
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-java@v3
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.3'
+          channel: 'stable'
+      - name: Ensure platform directories exist
+        run: flutter create --platforms=android --org com.example . || true
+      - run: flutter clean || true
+      - run: flutter pub get || true
+      - run: flutter pub outdated || true
+      - name: Build APK
+        run: flutter build apk --release
+      - name: Build App Bundle
+        run: flutter build appbundle --release
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+      - name: Upload App Bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-aab
+          path: build/app/outputs/bundle/release/app-release.aab
