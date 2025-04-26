@@ -1,3 +1,5 @@
+// ignore_for_file: avoid_print
+
 import 'dart:math';
 
 // ignore: depend_on_referenced_packages
@@ -14,7 +16,6 @@ import 'calendar_state.dart';
 class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
   CalendarRepository? _repository;
   DatabaseSyncService? _syncService;
-  final _uuid = const Uuid();
 
   CalendarBloc() : super(const CalendarInitial()) {
     on<CalendarInitialize>(_onInitialize);
