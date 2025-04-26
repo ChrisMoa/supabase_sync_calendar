@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_sync_calendar/core/models/calendar_event_model.dart';
 import 'package:supabase_sync_calendar/core/utils/time_utils.dart';
+import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/event_edit_dialog.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
 import 'package:uuid/uuid.dart';
+
+import '../widgets/event_brief_info.dart';
 
 class SfCalendarWidget extends StatefulWidget {
   /// The type of calendar view to display
@@ -56,6 +59,7 @@ class SfCalendarWidget extends StatefulWidget {
 class _SfCalendarWidgetState extends State<SfCalendarWidget> {
   late CalendarController _calendarController;
   final _uuid = const Uuid();
+  OverlayEntry? _overlayEntry;
 
   @override
   void initState() {
@@ -66,59 +70,76 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
 
   @override
   void dispose() {
+    _removeOverlay();
     _calendarController.dispose();
     super.dispose();
   }
 
+  void _removeOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return SfCalendar(
-      controller: _calendarController,
-      view: widget.calendarView,
-      dataSource: _getCalendarDataSource(),
-      allowDragAndDrop: true,
-      allowAppointmentResize: true,
-      timeSlotViewSettings: TimeSlotViewSettings(
-        timeInterval: Duration(minutes: widget.timeSnapInterval),
-        timeIntervalHeight: widget.timeIntervalHeight,
-        timeFormat: 'HH:mm',
-        startHour: widget.startHour,
-        endHour: widget.endHour,
-      ),
-      monthViewSettings: const MonthViewSettings(
-        appointmentDisplayMode: MonthAppointmentDisplayMode.appointment,
-      ),
-      onTap: _handleCalendarTap,
-      onLongPress: _handleCalendarLongPress,
-      onViewChanged: (details) {
-        if (widget.onViewChanged != null) {
-          widget.onViewChanged!(_calendarController.view!);
-        }
-      },
-      appointmentBuilder: (context, details) {
-        final Appointment appointment = details.appointments.first;
-        return Container(
-          decoration: BoxDecoration(
-            color: appointment.color,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          padding: const EdgeInsets.all(2),
-          child: Text(
-            appointment.subject,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 12,
+    return GestureDetector(
+      onTap: _removeOverlay,
+      child: SfCalendar(
+        controller: _calendarController,
+        view: widget.calendarView,
+        dataSource: _getCalendarDataSource(),
+        allowDragAndDrop: true,
+        allowAppointmentResize: true,
+        showNavigationArrow: true,
+        timeSlotViewSettings: TimeSlotViewSettings(
+          timeInterval: Duration(minutes: widget.timeSnapInterval),
+          timeIntervalHeight: widget.timeIntervalHeight,
+          timeFormat: 'HH:mm',
+          startHour: widget.startHour,
+          endHour: widget.endHour,
+        ),
+        monthViewSettings: const MonthViewSettings(
+          appointmentDisplayMode: MonthAppointmentDisplayMode.appointment,
+          showAgenda: true,
+        ),
+        onTap: _handleCalendarTap,
+        onLongPress: _handleCalendarLongPress,
+        onViewChanged: (details) {
+          if (widget.onViewChanged != null) {
+            widget.onViewChanged!(_calendarController.view!);
+          }
+        },
+        appointmentBuilder: (context, details) {
+          final Appointment appointment = details.appointments.first;
+          return Container(
+            decoration: BoxDecoration(
+              color: appointment.color,
+              borderRadius: BorderRadius.circular(4),
             ),
-            overflow: TextOverflow.ellipsis,
-          ),
-        );
-      },
-      dragAndDropSettings: const DragAndDropSettings(
-        allowNavigation: true,
-        allowScroll: true,
-        autoNavigateDelay: Duration(seconds: 1),
-        indicatorTimeFormat: 'HH:mm',
-        showTimeIndicator: true,
+            padding: const EdgeInsets.all(2),
+            child: Text(
+              appointment.subject,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          );
+        },
+        dragAndDropSettings: const DragAndDropSettings(
+          allowNavigation: true,
+          allowScroll: true,
+          autoNavigateDelay: Duration(seconds: 1),
+          indicatorTimeFormat: 'HH:mm',
+          showTimeIndicator: true,
+        ),
+        onDragStart: _handleDragStart,
+        onDragUpdate: _handleDragUpdate,
+        onDragEnd: _handleDragEnd,
+        onAppointmentResizeStart: _handleResizeStart,
+        onAppointmentResizeUpdate: _handleResizeUpdate,
+        onAppointmentResizeEnd: _handleResizeEnd,
       ),
     );
   }
@@ -145,11 +166,15 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
   }
 
   void _handleCalendarTap(CalendarTapDetails details) {
+    // Remove any existing overlay first
+    _removeOverlay();
+
     if (details.targetElement == CalendarElement.appointment &&
         details.appointments != null &&
         details.appointments!.isNotEmpty) {
-      final appointment = details.appointments!.first;
-      final String eventId = appointment.id as String;
+      final appointment = details.appointments!.first as Appointment;
+      final String eventId =
+          appointment.id.toString(); // Fix: Use toString() to safely get ID
 
       // Find the event
       final event = widget.events.firstWhere(
@@ -157,8 +182,10 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
         orElse: () => throw Exception('Event not found'),
       );
 
-      // Show event details dialog
-      _showEventDetailsDialog(event);
+      // Show custom event info popup
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showEventInfo(event, details);
+      });
     } else if (details.targetElement == CalendarElement.calendarCell &&
         details.date != null) {
       // Create new event when clicking on empty cell
@@ -170,107 +197,116 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
     }
   }
 
-  void _showEventDetailsDialog(CalendarEventModel event) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: event.color,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    event.title,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 18,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              _formatDateRange(event.start, event.end, event.wholeDay),
-              style: TextStyle(color: Colors.grey[700]),
-            ),
-            if (event.description.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Text(event.description),
-            ],
-            if (event.reminder != null) ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.notifications, size: 16),
-                  const SizedBox(width: 4),
-                  Text('Reminder: ${_formatDateTime(event.reminder!)}'),
-                ],
-              ),
-            ],
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    _showEditEventDialog(event);
-                  },
-                  icon: const Icon(Icons.edit),
-                  label: const Text('Edit'),
-                ),
-                TextButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                    _showDeleteConfirmation(event);
-                  },
-                  icon: const Icon(Icons.delete),
-                  label: const Text('Delete'),
-                  style: TextButton.styleFrom(foregroundColor: Colors.red),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  void _showEventInfo(CalendarEventModel event, CalendarTapDetails details) {
+    // Get the calendar widget's position and size
+    final RenderBox calendarRenderBox = context.findRenderObject() as RenderBox;
+    final calendarPosition = calendarRenderBox.localToGlobal(Offset.zero);
+    final calendarSize = calendarRenderBox.size;
 
-  String _formatDateTime(DateTime dateTime) {
-    return '${dateTime.day}/${dateTime.month}/${dateTime.year}, ${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}';
-  }
+    // Calculate the position based on tap location
+    // Since bounds isn't available, use the tap position directly if available
+    Offset position;
 
-  String _formatDateRange(DateTime start, DateTime end, bool wholeDay) {
-    if (wholeDay) {
-      if (start.year == end.year &&
-          start.month == end.month &&
-          start.day == end.day) {
-        return 'All day, ${start.day}/${start.month}/${start.year}';
+    if (details.targetElement == CalendarElement.appointment) {
+      // For appointments, use either details.position or a reasonable default
+      if (details.date != null) {
+        // Try to calculate position based on the date/time
+        final timeAxisHeight =
+            calendarSize.height / (widget.endHour - widget.startHour);
+        final hourOffset = details.date!.hour -
+            widget.startHour.toInt() +
+            (details.date!.minute / 60.0);
+
+        position = Offset(
+          calendarPosition.dx + 20,
+          calendarPosition.dy + (hourOffset * timeAxisHeight),
+        );
       } else {
-        return 'All day, ${start.day}/${start.month}/${start.year} - ${end.day}/${end.month}/${end.year}';
+        // Fallback position if date isn't available
+        position = Offset(
+          calendarPosition.dx + 20,
+          calendarPosition.dy + 100,
+        );
       }
     } else {
-      if (start.year == end.year &&
-          start.month == end.month &&
-          start.day == end.day) {
-        return '${start.day}/${start.month}/${start.year}, ${start.hour}:${start.minute.toString().padLeft(2, '0')} - ${end.hour}:${end.minute.toString().padLeft(2, '0')}';
-      } else {
-        return '${start.day}/${start.month}/${start.year}, ${start.hour}:${start.minute.toString().padLeft(2, '0')} - ${end.day}/${end.month}/${end.year}, ${end.hour}:${end.minute.toString().padLeft(2, '0')}';
-      }
+      // Default position for other elements
+      position = Offset(
+        calendarPosition.dx + calendarSize.width * 0.25,
+        calendarPosition.dy + calendarSize.height * 0.3,
+      );
     }
+
+    // Ensure the popup won't go off-screen
+    final screenSize = MediaQuery.of(context).size;
+    const popupWidth = 300.0;
+    const popupHeight = 200.0;
+
+    if (position.dx + popupWidth > screenSize.width) {
+      position = Offset(screenSize.width - popupWidth - 20, position.dy);
+    }
+
+    if (position.dx < 10) {
+      position = Offset(10, position.dy);
+    }
+
+    if (position.dy < 10) {
+      position = Offset(position.dx, 10);
+    }
+
+    if (position.dy > screenSize.height - popupHeight) {
+      position = Offset(position.dx, screenSize.height - popupHeight - 20);
+    }
+
+    // Create and show the overlay
+    _overlayEntry = OverlayEntry(
+      builder: (context) => EventBriefInfo(
+        event: event,
+        position: position,
+        onClose: _removeOverlay,
+        onEdit: _showEditEventDialog,
+        onDuplicate: _handleEventDuplicate,
+        onDelete: _handleEventDelete,
+        onDurationChange: widget.onEventUpdate,
+      ),
+    );
+
+    Overlay.of(context).insert(_overlayEntry!);
+  }
+
+  void _handleEventDuplicate(CalendarEventModel event) {
+    final duplicatedEvent = event.copyWith(
+      id: _uuid.v4(),
+    );
+
+    if (widget.onEventAdd != null) {
+      widget.onEventAdd!(duplicatedEvent);
+    }
+  }
+
+  void _handleEventDelete(CalendarEventModel event) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Event'),
+        content: Text('Are you sure you want to delete "${event.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              if (widget.onEventDelete != null) {
+                widget.onEventDelete!(event.id);
+              }
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showAddEventDialog(DateTime startTime, DateTime endTime) {
@@ -336,33 +372,9 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
     );
   }
 
-  void _showDeleteConfirmation(CalendarEventModel event) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Event'),
-        content: Text('Are you sure you want to delete "${event.title}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              if (widget.onEventDelete != null) {
-                widget.onEventDelete!(event.id);
-              }
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _handleCalendarLongPress(CalendarLongPressDetails details) {
+    _removeOverlay();
+
     if (details.targetElement == CalendarElement.calendarCell &&
         details.date != null) {
       final DateTime date = details.date!;
@@ -373,6 +385,83 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
           snappedTime.add(Duration(minutes: widget.timeSnapInterval));
 
       _showAddEventDialog(snappedTime, endTime);
+    }
+  }
+
+  // Drag handlers with proper database syncing
+  void _handleDragStart(AppointmentDragStartDetails details) {
+    _removeOverlay();
+  }
+
+  void _handleDragUpdate(AppointmentDragUpdateDetails details) {
+    // Optional visual feedback
+  }
+
+  void _handleDragEnd(AppointmentDragEndDetails details) {
+    if (details.appointment != null && details.droppingTime != null) {
+      // First get the appointment and cast it correctly
+      final appointment = details.appointment as Appointment;
+      // Now access the id safely
+      final String eventId = appointment.id.toString();
+
+      try {
+        final event = widget.events.firstWhere((e) => e.id == eventId);
+
+        // Calculate the duration to preserve it
+        final Duration duration = event.end.difference(event.start);
+
+        // Create new start and end times based on the drop position
+        final DateTime newStart = _snapTimeToInterval(details.droppingTime!);
+        final DateTime newEnd = newStart.add(duration);
+
+        // Create updated event
+        final updatedEvent = event.copyWith(
+          start: newStart,
+          end: newEnd,
+        );
+
+        // Update the event through callback
+        if (widget.onEventUpdate != null) {
+          widget.onEventUpdate!(updatedEvent);
+        }
+      } catch (e) {
+        print('Error updating event: $e');
+      }
+    }
+  }
+
+  // Resize handlers with proper database syncing
+  void _handleResizeStart(AppointmentResizeStartDetails details) {
+    _removeOverlay();
+  }
+
+  void _handleResizeUpdate(AppointmentResizeUpdateDetails details) {
+    // Optional visual feedback
+  }
+
+  void _handleResizeEnd(AppointmentResizeEndDetails details) {
+    if (details.appointment != null) {
+      final String eventId = details.appointment!.id.toString();
+      final event = widget.events.firstWhere((e) => e.id == eventId);
+
+      // Get the new start and end times from the resize operation
+      final DateTime newStart = details.startTime ?? event.start;
+      final DateTime newEnd = details.endTime ?? event.end;
+
+      // Snap times to interval
+      final DateTime snappedStart = _snapTimeToInterval(newStart);
+      final DateTime snappedEnd = _snapTimeToInterval(newEnd);
+
+      // Create updated event
+      final updatedEvent = event.copyWith(
+        start: snappedStart,
+        end: snappedEnd,
+      );
+
+      // Update the event through callback
+      if (widget.onEventUpdate != null) {
+        widget.onEventUpdate!(updatedEvent);
+      }
     }
   }
 
@@ -390,515 +479,5 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
 class _AppointmentDataSource extends CalendarDataSource {
   _AppointmentDataSource(List<Appointment> source) {
     appointments = source;
-  }
-}
-
-// This is a placeholder for the EventEditDialog class
-// You should define this in another file or replace this with your existing implementation
-class EventEditDialog extends StatefulWidget {
-  final String? title;
-  final String? description;
-  final DateTime startTime;
-  final DateTime endTime;
-  final Color? color;
-  final bool? wholeDay;
-  final String? calendarId;
-  final DateTime? reminder;
-  final Function(String title, String description, DateTime start, DateTime end,
-      Color color, bool wholeDay, String calendarId, DateTime? reminder) onSave;
-
-  const EventEditDialog({
-    super.key,
-    this.title,
-    this.description,
-    required this.startTime,
-    required this.endTime,
-    this.color,
-    this.wholeDay,
-    this.calendarId,
-    this.reminder,
-    required this.onSave,
-  });
-
-  @override
-  State<EventEditDialog> createState() => _EventEditDialogState();
-}
-
-class _EventEditDialogState extends State<EventEditDialog> {
-  late TextEditingController _titleController;
-  late TextEditingController _descriptionController;
-  late DateTime _startTime;
-  late DateTime _endTime;
-  late Color _color;
-  late bool _wholeDay;
-  late String _calendarId;
-  DateTime? _reminder;
-
-  final List<Color> _availableColors = [
-    Colors.blue,
-    Colors.green,
-    Colors.red,
-    Colors.orange,
-    Colors.purple,
-    Colors.teal,
-  ];
-
-  final List<String> _availableCalendars = [
-    'default',
-    'work',
-    'personal',
-    'family'
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    _titleController = TextEditingController(text: widget.title ?? '');
-    _descriptionController =
-        TextEditingController(text: widget.description ?? '');
-    _startTime = widget.startTime;
-    _endTime = widget.endTime;
-    _color = widget.color ?? Colors.blue;
-    _wholeDay = widget.wholeDay ?? false;
-    _calendarId = widget.calendarId ?? 'default';
-    _reminder = widget.reminder;
-  }
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _descriptionController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.title != null && widget.title != ''
-          ? 'Edit Event'
-          : 'New Event'),
-      content: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _titleController,
-              decoration: const InputDecoration(
-                labelText: 'Title',
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Description',
-              ),
-              maxLines: 3,
-            ),
-            const SizedBox(height: 16),
-
-            // Calendar and Whole Day options
-            Row(
-              children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: _calendarId,
-                    decoration: const InputDecoration(
-                      labelText: 'Calendar',
-                    ),
-                    items: _availableCalendars
-                        .map((cal) => DropdownMenuItem<String>(
-                              value: cal,
-                              child: Text(cal),
-                            ))
-                        .toList(),
-                    onChanged: (value) {
-                      setState(() {
-                        _calendarId = value ?? 'default';
-                      });
-                    },
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Row(
-                  children: [
-                    Checkbox(
-                      value: _wholeDay,
-                      onChanged: (value) {
-                        setState(() {
-                          _wholeDay = value ?? false;
-                        });
-                      },
-                    ),
-                    const Text('All Day'),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Date/Time selection based on whole day status
-            if (_wholeDay) ...[
-              // Date pickers for whole day events
-              _buildDatePicker(
-                label: 'Start',
-                dateTime: _startTime,
-                onChanged: (dateTime) {
-                  setState(() {
-                    // For whole day, set to start of day
-                    _startTime = DateTime(
-                      dateTime.year,
-                      dateTime.month,
-                      dateTime.day,
-                    );
-
-                    // Ensure end date is not before start date
-                    if (_endTime.isBefore(_startTime)) {
-                      _endTime = _startTime
-                          .add(const Duration(days: 1))
-                          .subtract(const Duration(seconds: 1));
-                    }
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-              _buildDatePicker(
-                label: 'End',
-                dateTime: _endTime,
-                onChanged: (dateTime) {
-                  setState(() {
-                    // For whole day, set to end of day
-                    _endTime = DateTime(
-                      dateTime.year,
-                      dateTime.month,
-                      dateTime.day,
-                      23,
-                      59,
-                      59,
-                    );
-
-                    // Ensure start date is not after end date
-                    if (_startTime.isAfter(_endTime)) {
-                      _startTime = DateTime(
-                        _endTime.year,
-                        _endTime.month,
-                        _endTime.day,
-                      );
-                    }
-                  });
-                },
-              ),
-            ] else ...[
-              // Date/time pickers for regular events
-              _buildDateTimePicker(
-                label: 'Start',
-                dateTime: _startTime,
-                onChanged: (dateTime) {
-                  setState(() {
-                    _startTime = dateTime;
-                    // Adjust end time if needed
-                    if (_endTime.isBefore(_startTime)) {
-                      _endTime = _startTime.add(const Duration(hours: 1));
-                    }
-                  });
-                },
-              ),
-              const SizedBox(height: 16),
-              _buildDateTimePicker(
-                label: 'End',
-                dateTime: _endTime,
-                onChanged: (dateTime) {
-                  setState(() {
-                    _endTime = dateTime;
-                    // Adjust start time if needed
-                    if (_startTime.isAfter(_endTime)) {
-                      _startTime = _endTime.subtract(const Duration(hours: 1));
-                    }
-                  });
-                },
-              ),
-            ],
-
-            const SizedBox(height: 16),
-
-            // Reminder
-            Row(
-              children: [
-                const Text('Reminder:'),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _reminder == null
-                      ? OutlinedButton(
-                          onPressed: _pickReminderDateTime,
-                          child: const Text('Set Reminder'),
-                        )
-                      : Row(
-                          children: [
-                            Text(
-                                '${_reminder!.day}/${_reminder!.month} at ${_reminder!.hour}:${_reminder!.minute.toString().padLeft(2, '0')}'),
-                            IconButton(
-                              icon: const Icon(Icons.clear),
-                              onPressed: () {
-                                setState(() {
-                                  _reminder = null;
-                                });
-                              },
-                            ),
-                          ],
-                        ),
-                ),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-
-            // Color picker
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Event Color',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _availableColors.map((color) {
-                    return GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _color = color;
-                        });
-                      },
-                      child: Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: color,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: _color == color
-                                ? Colors.black
-                                : Colors.transparent,
-                            width: 2,
-                          ),
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            if (_titleController.text.trim().isNotEmpty) {
-              widget.onSave(
-                _titleController.text,
-                _descriptionController.text,
-                _startTime,
-                _endTime,
-                _color,
-                _wholeDay,
-                _calendarId,
-                _reminder,
-              );
-              Navigator.of(context).pop();
-            }
-          },
-          child: const Text('Save'),
-        ),
-      ],
-    );
-  }
-
-  // Date picker for whole day events
-  Widget _buildDatePicker({
-    required String label,
-    required DateTime dateTime,
-    required Function(DateTime) onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('$label Date:',
-            style: const TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        InkWell(
-          onTap: () async {
-            final pickedDate = await showDatePicker(
-              context: context,
-              initialDate: dateTime,
-              firstDate: DateTime(2000),
-              lastDate: DateTime(2100),
-            );
-
-            if (pickedDate != null) {
-              onChanged(pickedDate);
-            }
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.calendar_today, size: 18),
-                const SizedBox(width: 8),
-                Text('${dateTime.day}/${dateTime.month}/${dateTime.year}'),
-                const Spacer(),
-                const Icon(Icons.arrow_drop_down),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // Combined date and time picker for regular events
-  Widget _buildDateTimePicker({
-    required String label,
-    required DateTime dateTime,
-    required Function(DateTime) onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('$label:', style: const TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            // Date part
-            Expanded(
-              child: InkWell(
-                onTap: () async {
-                  final pickedDate = await showDatePicker(
-                    context: context,
-                    initialDate: dateTime,
-                    firstDate: DateTime(2000),
-                    lastDate: DateTime(2100),
-                  );
-
-                  if (pickedDate != null) {
-                    onChanged(DateTime(
-                      pickedDate.year,
-                      pickedDate.month,
-                      pickedDate.day,
-                      dateTime.hour,
-                      dateTime.minute,
-                    ));
-                  }
-                },
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.calendar_today, size: 18),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          '${dateTime.day}/${dateTime.month}/${dateTime.year}',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const Icon(Icons.arrow_drop_down, size: 16),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            // Time part
-            Expanded(
-              child: InkWell(
-                onTap: () async {
-                  final pickedTime = await showTimePicker(
-                    context: context,
-                    initialTime: TimeOfDay.fromDateTime(dateTime),
-                  );
-
-                  if (pickedTime != null) {
-                    onChanged(DateTime(
-                      dateTime.year,
-                      dateTime.month,
-                      dateTime.day,
-                      pickedTime.hour,
-                      pickedTime.minute,
-                    ));
-                  }
-                },
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.access_time, size: 18),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          '${dateTime.hour}:${dateTime.minute.toString().padLeft(2, '0')}',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      const Icon(Icons.arrow_drop_down, size: 16),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // Reminder date/time picker
-  Future<void> _pickReminderDateTime() async {
-    final now = DateTime.now();
-    final initialDate = _reminder ?? now;
-
-    final pickedDate = await showDatePicker(
-      context: context,
-      initialDate: initialDate,
-      firstDate: now,
-      lastDate: DateTime(2100),
-    );
-
-    if (pickedDate != null) {
-      final pickedTime = await showTimePicker(
-        context: context,
-        initialTime: TimeOfDay.fromDateTime(initialDate),
-      );
-
-      if (pickedTime != null) {
-        setState(() {
-          _reminder = DateTime(
-            pickedDate.year,
-            pickedDate.month,
-            pickedDate.day,
-            pickedTime.hour,
-            pickedTime.minute,
-          );
-        });
-      }
-    }
   }
 }

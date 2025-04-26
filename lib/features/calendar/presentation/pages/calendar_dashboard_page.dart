@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/event_edit_dialog.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
 import 'package:uuid/uuid.dart';
 
