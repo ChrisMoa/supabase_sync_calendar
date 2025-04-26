@@ -1,5 +1,9 @@
+import 'dart:math';
+
+// ignore: depend_on_referenced_packages
 import 'package:bloc/bloc.dart';
-import 'package:draggable_calendar/draggable_calendar.dart';
+import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 
 import '../../../../../core/models/calendar_event_model.dart';
 import '../../../data/repositories/calendar_repository.dart';
@@ -10,6 +14,7 @@ import 'calendar_state.dart';
 class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
   CalendarRepository? _repository;
   DatabaseSyncService? _syncService;
+  final _uuid = const Uuid();
 
   CalendarBloc() : super(const CalendarInitial()) {
     on<CalendarInitialize>(_onInitialize);
@@ -69,25 +74,11 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
 
       print('Loaded ${events.length} events');
 
-      // Convert from CalendarEventModel to EventModel for draggable calendar
-      final draggableEvents = events
-          .map((event) => EventModel(
-                id: event.id,
-                title: event.title,
-                description: event.description,
-                start: event.start,
-                end: event.end,
-                color: event.color,
-              ))
-          .toList();
-
-      print(
-          'Emitting CalendarLoaded state with ${draggableEvents.length} events');
       emit(CalendarLoaded(
         events: events,
-        draggableEvents: draggableEvents,
         calendarViewType: state.calendarViewType,
       ));
+
       print('CalendarLoaded state emitted successfully');
     } catch (e) {
       print('Failed to load events: $e');
@@ -95,7 +86,6 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
       // This prevents the UI from getting stuck in loading state
       emit(CalendarLoaded(
         events: [],
-        draggableEvents: [],
         calendarViewType: state.calendarViewType,
       ));
     }
@@ -122,20 +112,9 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         // Create the new event in Supabase
         final newEvent = await _repository!.createEvent(event.event);
 
-        // Convert to draggable event
-        final newDraggableEvent = EventModel(
-          id: newEvent.id,
-          title: newEvent.title,
-          description: newEvent.description,
-          start: newEvent.start,
-          end: newEvent.end,
-          color: newEvent.color,
-        );
-
         // Update the state with the new event
         emit(CalendarLoaded(
           events: [...currentState.events, newEvent],
-          draggableEvents: [...currentState.draggableEvents, newDraggableEvent],
           calendarViewType: currentState.calendarViewType,
         ));
       } catch (e) {
@@ -152,7 +131,6 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
           if (state is CalendarError) {
             emit(CalendarLoaded(
               events: currentState.events,
-              draggableEvents: currentState.draggableEvents,
               calendarViewType: currentState.calendarViewType,
             ));
           }
@@ -184,29 +162,13 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
       // Update the event in Supabase
       final updatedEvent = await _repository!.updateEvent(event.event);
 
-      // Convert to draggable event
-      final updatedDraggableEvent = EventModel(
-        id: updatedEvent.id,
-        title: updatedEvent.title,
-        description: updatedEvent.description,
-        start: updatedEvent.start,
-        end: updatedEvent.end,
-        color: updatedEvent.color,
-      );
-
       // Update the events list
       final updatedEvents = currentState.events.map((e) {
         return e.id == updatedEvent.id ? updatedEvent : e;
       }).toList();
 
-      // Update the draggable events list
-      final updatedDraggableEvents = currentState.draggableEvents.map((e) {
-        return e.id == updatedDraggableEvent.id ? updatedDraggableEvent : e;
-      }).toList();
-
       emit(CalendarLoaded(
         events: updatedEvents,
-        draggableEvents: updatedDraggableEvents,
         calendarViewType: currentState.calendarViewType,
       ));
     } catch (e) {
@@ -239,13 +201,8 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
       final filteredEvents =
           currentState.events.where((e) => e.id != event.eventId).toList();
 
-      final filteredDraggableEvents = currentState.draggableEvents
-          .where((e) => e.id != event.eventId)
-          .toList();
-
       emit(CalendarLoaded(
         events: filteredEvents,
-        draggableEvents: filteredDraggableEvents,
         calendarViewType: currentState.calendarViewType,
       ));
     } catch (e) {
@@ -262,7 +219,6 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
       final currentState = state as CalendarLoaded;
       emit(CalendarLoaded(
         events: currentState.events,
-        draggableEvents: currentState.draggableEvents,
         calendarViewType: event.viewType,
       ));
     }
@@ -281,20 +237,9 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
       case SyncType.added:
         if (event.event == null) return;
 
-        // Convert to draggable event
-        final newDraggableEvent = EventModel(
-          id: event.event!.id,
-          title: event.event!.title,
-          description: event.event!.description,
-          start: event.event!.start,
-          end: event.event!.end,
-          color: event.event!.color,
-        );
-
         // Update the state with the new event
         emit(CalendarLoaded(
           events: [...currentState.events, event.event!],
-          draggableEvents: [...currentState.draggableEvents, newDraggableEvent],
           calendarViewType: currentState.calendarViewType,
         ));
         break;
@@ -302,29 +247,13 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
       case SyncType.updated:
         if (event.event == null) return;
 
-        // Convert to draggable event
-        final updatedDraggableEvent = EventModel(
-          id: event.event!.id,
-          title: event.event!.title,
-          description: event.event!.description,
-          start: event.event!.start,
-          end: event.event!.end,
-          color: event.event!.color,
-        );
-
         // Update the events list
         final updatedEvents = currentState.events.map((e) {
           return e.id == event.event!.id ? event.event! : e;
         }).toList();
 
-        // Update the draggable events list
-        final updatedDraggableEvents = currentState.draggableEvents.map((e) {
-          return e.id == updatedDraggableEvent.id ? updatedDraggableEvent : e;
-        }).toList();
-
         emit(CalendarLoaded(
           events: updatedEvents,
-          draggableEvents: updatedDraggableEvents,
           calendarViewType: currentState.calendarViewType,
         ));
         break;
@@ -336,17 +265,113 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         final filteredEvents =
             currentState.events.where((e) => e.id != event.eventId).toList();
 
-        final filteredDraggableEvents = currentState.draggableEvents
-            .where((e) => e.id != event.eventId)
-            .toList();
-
         emit(CalendarLoaded(
           events: filteredEvents,
-          draggableEvents: filteredDraggableEvents,
           calendarViewType: currentState.calendarViewType,
         ));
         break;
     }
+  }
+
+  // Generate sample events for testing
+  static List<CalendarEventModel> generateSampleEvents([int samples = 5]) {
+    final List<CalendarEventModel> events = [];
+    final now = DateTime.now();
+    final uuid = Uuid();
+    final random = Random();
+
+    // Sample event templates
+    final eventTemplates = [
+      {
+        'title': 'Morning Meeting',
+        'description': 'Daily team standup',
+        'color': Colors.blue,
+        'calendarId': 'work',
+      },
+      {
+        'title': 'Lunch with Client',
+        'description': 'Discuss new project requirements',
+        'color': Colors.green,
+        'calendarId': 'work',
+      },
+      {
+        'title': 'Project Review',
+        'description': 'End of sprint review',
+        'color': Colors.orange,
+        'calendarId': 'work',
+      },
+      {
+        'title': 'Family Dinner',
+        'description': 'At home',
+        'color': Colors.purple,
+        'calendarId': 'family',
+      },
+      {
+        'title': 'Gym Session',
+        'description': 'Cardio and weights',
+        'color': Colors.red,
+        'calendarId': 'personal',
+      },
+    ];
+
+    // Generate random events
+    for (int i = 0; i < samples; i++) {
+      // Pick a random template
+      final templateIndex = random.nextInt(eventTemplates.length);
+      final template = eventTemplates[templateIndex];
+
+      // Generate random date (-7 to +14 days from now)
+      final daysOffset = random.nextInt(21) - 7;
+      final eventDate = now.add(Duration(days: daysOffset));
+
+      // Determine if it's a whole day event (20% chance)
+      final isWholeDay = random.nextInt(5) == 0;
+
+      DateTime startTime;
+      DateTime endTime;
+
+      if (isWholeDay) {
+        // Whole day event
+        startTime =
+            DateTime(eventDate.year, eventDate.month, eventDate.day, 0, 0);
+        endTime = DateTime(
+            eventDate.year, eventDate.month, eventDate.day, 23, 59, 59);
+      } else {
+        // Regular event
+        final startHour = 7 + random.nextInt(11);
+        final startMinute =
+            [0, 15, 30, 45][random.nextInt(4)]; // Quarter-hour intervals
+        final durationMinutes = 30 + random.nextInt(5) * 30; // 30min increments
+
+        startTime = DateTime(eventDate.year, eventDate.month, eventDate.day,
+            startHour, startMinute);
+
+        endTime = startTime.add(Duration(minutes: durationMinutes));
+      }
+
+      // 30% chance of having a reminder
+      DateTime? reminder = random.nextInt(10) < 3
+          ? startTime.subtract(Duration(minutes: 15 * (1 + random.nextInt(8))))
+          : null;
+
+      events.add(
+        CalendarEventModel(
+          id: uuid.v4(),
+          title: template['title'] as String,
+          description: template['description'] as String,
+          start: startTime,
+          end: endTime,
+          color: template['color'] as Color,
+          userId: 'sample',
+          wholeDay: isWholeDay,
+          calendarId: template['calendarId'] as String,
+          reminder: reminder,
+          appendixes: const [],
+        ),
+      );
+    }
+
+    return events;
   }
 
   // Clean up when the bloc is closed

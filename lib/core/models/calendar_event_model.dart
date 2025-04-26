@@ -10,6 +10,10 @@ class CalendarEventModel extends Equatable {
   final DateTime end;
   final Color color;
   final String userId;
+  final bool wholeDay;
+  final String calendarId;
+  final DateTime? reminder;
+  final List<String> appendixes;
 
   const CalendarEventModel({
     required this.id,
@@ -19,6 +23,10 @@ class CalendarEventModel extends Equatable {
     required this.end,
     required this.color,
     required this.userId,
+    this.wholeDay = false,
+    this.calendarId = 'default',
+    this.reminder,
+    this.appendixes = const [],
   });
 
   CalendarEventModel copyWith({
@@ -29,6 +37,10 @@ class CalendarEventModel extends Equatable {
     DateTime? end,
     Color? color,
     String? userId,
+    bool? wholeDay,
+    String? calendarId,
+    DateTime? reminder,
+    List<String>? appendixes,
   }) {
     return CalendarEventModel(
       id: id ?? this.id,
@@ -38,6 +50,10 @@ class CalendarEventModel extends Equatable {
       end: end ?? this.end,
       color: color ?? this.color,
       userId: userId ?? this.userId,
+      wholeDay: wholeDay ?? this.wholeDay,
+      calendarId: calendarId ?? this.calendarId,
+      reminder: reminder ?? this.reminder,
+      appendixes: appendixes ?? this.appendixes,
     );
   }
 
@@ -55,8 +71,17 @@ class CalendarEventModel extends Equatable {
       end: DateTime.parse(json[SupabaseUtils.colEndTime] as String),
       color: Color(colorValue),
       userId: json[SupabaseUtils.colUserId] as String,
+      wholeDay: json['whole_day'] as bool? ?? false,
+      calendarId: json['calendar_id'] as String? ?? 'default',
+      reminder: json['reminder'] != null
+          ? DateTime.parse(json['reminder'] as String)
+          : null,
+      appendixes: json['appendixes'] != null
+          ? List<String>.from(json['appendixes'] as List)
+          : const [],
     );
   }
+
   // Convert to Supabase Map from CalendarEventModel
   Map<String, dynamic> toJson() {
     return {
@@ -68,10 +93,25 @@ class CalendarEventModel extends Equatable {
       SupabaseUtils.colColor:
           color.value & 0xFFFFFF, // Remove alpha channel and keep only RGB
       SupabaseUtils.colUserId: userId,
+      'whole_day': wholeDay,
+      'calendar_id': calendarId,
+      'reminder': reminder?.toIso8601String(),
+      'appendixes': appendixes,
     };
   }
 
   @override
-  List<Object?> get props =>
-      [id, title, description, start, end, color, userId];
+  List<Object?> get props => [
+        id,
+        title,
+        description,
+        start,
+        end,
+        color,
+        userId,
+        wholeDay,
+        calendarId,
+        reminder,
+        appendixes
+      ];
 }
