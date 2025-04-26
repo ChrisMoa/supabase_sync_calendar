@@ -14,19 +14,32 @@ class CalendarRepository {
     required this.userId,
   });
 
-  // Get all events for the current user
-  Future<List<CalendarEventModel>> getEvents() async {
+  Future<List<CalendarEventModel>> getEvents({String? calendarId}) async {
     try {
-      print('Fetching events for user: $userId');
+      print(
+          'Fetching events for user: $userId, calendarId filter: ${calendarId ?? "none"}');
 
       // First check if the table exists
       try {
-        final response = await supabaseClient
+        var query = supabaseClient
             .from(SupabaseUtils.eventsTable)
             .select()
             .eq(SupabaseUtils.colUserId, userId);
 
-        print('Successfully fetched ${response.length} events');
+        // Apply calendar filter if provided
+        if (calendarId != null) {
+          query = query.eq(SupabaseUtils.colCalendarId, calendarId);
+        }
+
+        final response = await query;
+
+        print('Successfully fetched ${response.length} events from database');
+        // Print sample event data for debugging
+        if (response.isNotEmpty) {
+          print('Sample event: ${response[0]}');
+        } else {
+          print('No events found in database');
+        }
 
         return (response as List)
             .map((eventJson) => CalendarEventModel.fromJson(eventJson))
@@ -37,6 +50,7 @@ class CalendarRepository {
           print('Events table does not exist, returning empty list');
           return [];
         } else {
+          print('Database error: $e');
           rethrow;
         }
       }

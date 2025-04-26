@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 class SupabaseUtils {
   // Table names
   static const String eventsTable = 'calendar_events';
+  static const String calendarsTable = 'calendars';
 
   // Column names for events table
   static const String colId = 'id';
@@ -16,6 +17,14 @@ class SupabaseUtils {
   static const String colCalendarId = 'calendar_id';
   static const String colReminder = 'reminder';
   static const String colAppendixes = 'appendixes';
+  static const String colIsExternalReadOnly = 'is_external_read_only';
+
+  // Add column names for calendars table
+  static const String colName = 'name';
+  static const String colType = 'type';
+  static const String colIsDefault = 'is_default';
+  static const String colSyncUrl = 'sync_url';
+  static const String colDeviceCalendarId = 'device_calendar_id';
 
   /// Creates the necessary tables and RLS policies if they don't exist
   static Future<void> setupSupabaseTables(SupabaseClient client) async {
