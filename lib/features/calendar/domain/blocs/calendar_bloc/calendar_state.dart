@@ -1,7 +1,5 @@
-import 'package:draggable_calendar/draggable_calendar.dart';
 import 'package:equatable/equatable.dart';
-
-import '../../../../../core/models/calendar_event_model.dart';
+import 'package:supabase_sync_calendar/core/models/calendar_event_model.dart';
 
 abstract class CalendarState extends Equatable {
   final CalendarViewType calendarViewType;
@@ -14,6 +12,9 @@ abstract class CalendarState extends Equatable {
   List<Object> get props => [calendarViewType];
 }
 
+// Enum for calendar view types (needs to be accessible from multiple places)
+enum CalendarViewType { day, week, month, schedule }
+
 class CalendarInitial extends CalendarState {
   const CalendarInitial() : super();
 }
@@ -24,16 +25,14 @@ class CalendarLoading extends CalendarState {
 
 class CalendarLoaded extends CalendarState {
   final List<CalendarEventModel> events;
-  final List<EventModel> draggableEvents;
 
   const CalendarLoaded({
     required this.events,
-    required this.draggableEvents,
     required super.calendarViewType,
   });
 
   @override
-  List<Object> get props => [events, draggableEvents, calendarViewType];
+  List<Object> get props => [events, calendarViewType];
 }
 
 class CalendarError extends CalendarState {

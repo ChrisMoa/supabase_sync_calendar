@@ -12,6 +12,10 @@ class SupabaseUtils {
   static const String colEndTime = 'end_time';
   static const String colColor = 'color';
   static const String colUserId = 'user_id';
+  static const String colWholeDay = 'whole_day';
+  static const String colCalendarId = 'calendar_id';
+  static const String colReminder = 'reminder';
+  static const String colAppendixes = 'appendixes';
 
   /// Creates the necessary tables and RLS policies if they don't exist
   static Future<void> setupSupabaseTables(SupabaseClient client) async {

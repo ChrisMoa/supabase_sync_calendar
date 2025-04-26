@@ -17,8 +17,6 @@ dependencies:
   uuid: ^4.5.1
   intl: ^0.20.2
   syncfusion_flutter_calendar: ^29.1.38
-  draggable_calendar: 
-    path: ../dragable_calendar_entry
 
 dev_dependencies:
   flutter_test:

@@ -1,6 +1,6 @@
-import 'package:draggable_calendar/draggable_calendar.dart';
 import 'package:equatable/equatable.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_bloc/calendar_state.dart';
 
 import '../../../../../core/models/calendar_event_model.dart';
 

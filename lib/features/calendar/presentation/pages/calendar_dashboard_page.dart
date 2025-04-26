@@ -1,9 +1,9 @@
-import 'package:draggable_calendar/draggable_calendar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:supabase_sync_calendar/features/auth/presentation/pages/login_page.dart';
+import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/event_edit_dialog.dart';
+import 'package:syncfusion_flutter_calendar/calendar.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/models/calendar_event_model.dart';
@@ -11,9 +11,11 @@ import '../../../../core/utils/error_utils.dart';
 import '../../../../core/widgets/loading_indicator.dart';
 import '../../../auth/domain/blocs/custom_auth_bloc/custom_auth_bloc.dart';
 import '../../../auth/domain/blocs/custom_auth_bloc/custom_auth_event.dart';
+import '../../../auth/presentation/pages/login_page.dart';
 import '../../domain/blocs/calendar_bloc/calendar_bloc.dart';
 import '../../domain/blocs/calendar_bloc/calendar_event.dart';
 import '../../domain/blocs/calendar_bloc/calendar_state.dart';
+import '../widgets/sf_calendar_widget.dart';
 
 class CalendarDashboardPage extends StatefulWidget {
   final SupabaseClient supabaseClient;
@@ -94,8 +96,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
             return const LoadingIndicator(
                 message: 'Loading your calendar events...');
           } else if (state is CalendarLoaded) {
-            print(
-                'Building calendar with ${state.draggableEvents.length} events');
+            print('Building calendar with ${state.events.length} events');
             return _buildCalendar(state);
           } else {
             print('Initializing calendar...');
@@ -111,6 +112,11 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
             return const LoadingIndicator(message: 'Initializing calendar...');
           }
         },
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _addNewEvent,
+        tooltip: 'Add Event',
+        child: const Icon(Icons.add),
       ),
     );
   }
@@ -137,6 +143,10 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
               value: CalendarViewType.month,
               child: Text('Month View'),
             ),
+            const PopupMenuItem(
+              value: CalendarViewType.schedule,
+              child: Text('Schedule View'),
+            ),
           ],
         );
       },
@@ -144,17 +154,47 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
   }
 
   Widget _buildCalendar(CalendarLoaded state) {
-    return DraggableCalendar(
-      calendarViewType: state.calendarViewType,
-      events: state.draggableEvents,
+    return SfCalendarWidget(
+      calendarView: _getCalendarView(state.calendarViewType),
+      events: state.events,
       onEventAdd: _handleEventAdd,
       onEventUpdate: _handleEventUpdate,
       onEventDelete: _handleEventDelete,
-      onViewChanged: (viewType) {
-        context.read<CalendarBloc>().add(CalendarChangeView(viewType));
+      onViewChanged: (view) {
+        context.read<CalendarBloc>().add(CalendarChangeView(
+              _convertToCalendarViewType(view),
+            ));
       },
       timeSnapInterval: 15,
     );
+  }
+
+  CalendarView _getCalendarView(CalendarViewType viewType) {
+    switch (viewType) {
+      case CalendarViewType.day:
+        return CalendarView.day;
+      case CalendarViewType.week:
+        return CalendarView.week;
+      case CalendarViewType.month:
+        return CalendarView.month;
+      case CalendarViewType.schedule:
+        return CalendarView.schedule;
+    }
+  }
+
+  CalendarViewType _convertToCalendarViewType(CalendarView view) {
+    switch (view) {
+      case CalendarView.day:
+        return CalendarViewType.day;
+      case CalendarView.week:
+        return CalendarViewType.week;
+      case CalendarView.month:
+        return CalendarViewType.month;
+      case CalendarView.schedule:
+        return CalendarViewType.schedule;
+      default:
+        return CalendarViewType.week;
+    }
   }
 
   void _logout() {
@@ -168,63 +208,69 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
     );
   }
 
-  void _handleEventAdd(EventModel eventModel) {
-    // Convert from draggable calendar EventModel to our CalendarEventModel
-    final newEvent = CalendarEventModel(
-      id: eventModel.id.isEmpty ? _uuid.v4() : eventModel.id,
-      title: eventModel.title,
-      description: eventModel.description,
-      start: eventModel.start,
-      end: eventModel.end,
-      color: eventModel.color,
-      userId: widget.user.id,
+  void _addNewEvent() {
+    // Get current date/time
+    final now = DateTime.now();
+    // Round to nearest half hour
+    final startTime = DateTime(
+      now.year,
+      now.month,
+      now.day,
+      now.hour,
+      (now.minute ~/ 30) * 30,
     );
+    final endTime = startTime.add(const Duration(hours: 1));
 
-    context.read<CalendarBloc>().add(CalendarAddEvent(newEvent));
+    // Show event creation dialog
+    showDialog(
+      context: context,
+      builder: (context) => EventEditDialog(
+        startTime: startTime,
+        endTime: endTime,
+        onSave: (title, description, start, end, color, wholeDay, calendarId,
+            reminder) {
+          final newEvent = CalendarEventModel(
+            id: _uuid.v4(),
+            title: title,
+            description: description,
+            start: start,
+            end: end,
+            color: color,
+            userId: widget.user.id,
+            wholeDay: wholeDay,
+            calendarId: calendarId,
+            reminder: reminder,
+            appendixes: const [],
+          );
 
-    // Show success message using post-frame callback
+          _handleEventAdd(newEvent);
+        },
+      ),
+    );
+  }
+
+  void _handleEventAdd(CalendarEventModel newEvent) {
+    // Set the userId if not already set
+    final eventWithUserId = newEvent.copyWith(userId: widget.user.id);
+    context.read<CalendarBloc>().add(CalendarAddEvent(eventWithUserId));
+
+    // Show success message
     SchedulerBinding.instance.addPostFrameCallback((_) {
       ErrorUtils.showSuccessSnackBar(
-          context, 'Event "${newEvent.title}" added successfully');
+          context, 'Event "${eventWithUserId.title}" added successfully');
     });
   }
 
-  void _handleEventUpdate(EventModel eventModel) {
-    // Find the original event in our state
-    final calendarBloc = context.read<CalendarBloc>();
-    final state = calendarBloc.state;
+  void _handleEventUpdate(CalendarEventModel updatedEvent) {
+    // Ensure userId is preserved
+    final eventWithUserId = updatedEvent.copyWith(userId: widget.user.id);
+    context.read<CalendarBloc>().add(CalendarUpdateEvent(eventWithUserId));
 
-    if (state is CalendarLoaded) {
-      final originalEvent = state.events.firstWhere(
-        (event) => event.id == eventModel.id,
-        orElse: () => CalendarEventModel(
-          id: eventModel.id,
-          title: eventModel.title,
-          description: eventModel.description,
-          start: eventModel.start,
-          end: eventModel.end,
-          color: eventModel.color,
-          userId: widget.user.id,
-        ),
-      );
-
-      // Update the event with new values
-      final updatedEvent = originalEvent.copyWith(
-        title: eventModel.title,
-        description: eventModel.description,
-        start: eventModel.start,
-        end: eventModel.end,
-        color: eventModel.color,
-      );
-
-      calendarBloc.add(CalendarUpdateEvent(updatedEvent));
-
-      // Show success message using post-frame callback
-      SchedulerBinding.instance.addPostFrameCallback((_) {
-        ErrorUtils.showSuccessSnackBar(
-            context, 'Event "${updatedEvent.title}" updated');
-      });
-    }
+    // Show success message
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      ErrorUtils.showSuccessSnackBar(
+          context, 'Event "${updatedEvent.title}" updated');
+    });
   }
 
   void _handleEventDelete(String eventId) {
@@ -244,6 +290,9 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
           end: DateTime.now().add(const Duration(hours: 1)),
           color: Colors.blue,
           userId: widget.user.id,
+          wholeDay: false,
+          calendarId: 'default',
+          appendixes: const [],
         ),
       );
       eventTitle = event.title;
@@ -252,7 +301,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
     // Delete the event
     context.read<CalendarBloc>().add(CalendarDeleteEvent(eventId));
 
-    // Show success message using post-frame callback
+    // Show success message
     SchedulerBinding.instance.addPostFrameCallback((_) {
       ErrorUtils.showSuccessSnackBar(context,
           'Event${eventTitle.isNotEmpty ? ' "$eventTitle"' : ''} deleted');
