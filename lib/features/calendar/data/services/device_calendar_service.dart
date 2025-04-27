@@ -9,20 +9,43 @@ class DeviceCalendarService {
   final DeviceCalendarPlugin _deviceCalendarPlugin = DeviceCalendarPlugin();
   final Uuid _uuid = const Uuid();
 
-  // Get all device calendars
   Future<List<Calendar>> getDeviceCalendars() async {
-    // Check and request permissions
-    var permissionsGranted = await _deviceCalendarPlugin.hasPermissions();
-    if (permissionsGranted.data == null || permissionsGranted.data == false) {
-      permissionsGranted = await _deviceCalendarPlugin.requestPermissions();
+    try {
+      // Check permissions
+      var permissionsGranted = await _deviceCalendarPlugin.hasPermissions();
       if (permissionsGranted.data == null || permissionsGranted.data == false) {
-        throw Exception('Calendar permissions denied');
-      }
-    }
+        print('No calendar permissions, requesting...');
+        permissionsGranted = await _deviceCalendarPlugin.requestPermissions();
 
-    // Retrieve calendars
-    final calendarsResult = await _deviceCalendarPlugin.retrieveCalendars();
-    return calendarsResult.data ?? [];
+        if (permissionsGranted.data == null ||
+            permissionsGranted.data == false) {
+          print('Calendar permissions denied by user');
+          throw Exception(
+              'Calendar access denied. Please enable calendar permissions in your device settings.');
+        }
+      }
+
+      // Retrieve calendars
+      final calendarsResult = await _deviceCalendarPlugin.retrieveCalendars();
+
+      if (calendarsResult.isSuccess && calendarsResult.data != null) {
+        final calendars = calendarsResult.data!;
+        // Debug each calendar for troubleshooting
+        for (int i = 0; i < calendars.length; i++) {
+          final calendar = calendars[i];
+          print(
+              "Device calendar $i: id=${calendar.id}, name=${calendar.name}, color=${calendar.color}");
+        }
+        return calendars;
+      } else {
+        print('Failed to get calendars: ${calendarsResult.errors.toString()}');
+        throw Exception(
+            'Failed to retrieve device calendars: ${calendarsResult.errors.toString()}');
+      }
+    } catch (e) {
+      print('Error getting device calendars: $e');
+      throw Exception('Failed to access device calendars: $e');
+    }
   }
 
   // Convert device calendars to CalendarModel

@@ -14,11 +14,13 @@ import 'package:uuid/uuid.dart';
 class CalendarManagementPage extends StatefulWidget {
   final SupabaseClient supabaseClient;
   final User user;
+  final VoidCallback onImportDeviceCalendars;
 
   const CalendarManagementPage({
     super.key,
     required this.supabaseClient,
     required this.user,
+    required this.onImportDeviceCalendars,
   });
 
   @override
@@ -31,6 +33,7 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
   @override
   void initState() {
     super.initState();
+    print("CalendarManagementPage initialized");
     // Load calendars when page initializes
     context.read<CalendarManagementBloc>().add(const LoadCalendars());
   }
@@ -42,32 +45,65 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
         title: const Text('Manage Calendars'),
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
       ),
-      body: BlocConsumer<CalendarManagementBloc, CalendarManagementState>(
-        listener: (context, state) {
-          if (state is CalendarManagementError) {
-            ErrorUtils.showErrorSnackBar(context, state.message);
-          } else if (state is CalendarSyncComplete) {
-            ErrorUtils.showSuccessSnackBar(
-              context,
-              'Successfully synced ${state.eventCount} events',
-            );
-          } else if (state is CalendarSyncError) {
-            ErrorUtils.showErrorSnackBar(context, state.message);
-          } else if (state is DeviceCalendarsAvailable) {
-            _showDeviceCalendarSelection(context, state.deviceCalendars);
-          }
-        },
-        builder: (context, state) {
-          if (state is CalendarManagementLoading) {
-            return const LoadingIndicator(message: 'Loading calendars...');
-          } else if (state is CalendarManagementLoaded) {
-            return _buildCalendarList(context, state);
-          } else if (state is CalendarSyncing) {
-            return const LoadingIndicator(message: 'Syncing calendar...');
-          } else {
-            return const Center(child: Text('Loading...'));
-          }
-        },
+      body: MultiBlocListener(
+        listeners: [
+          // Primary listener for state changes
+          BlocListener<CalendarManagementBloc, CalendarManagementState>(
+            listener: (context, state) {
+              print("State listener received: ${state.runtimeType}");
+
+              if (state is DeviceCalendarsAvailable) {
+                print(
+                    "HANDLING DeviceCalendarsAvailable in listener with ${state.deviceCalendars.length} calendars");
+                // Use a post-frame callback to avoid build phase issues
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  _showDeviceCalendarSelectionDialog(state.deviceCalendars);
+                });
+              }
+            },
+            listenWhen: (previous, current) =>
+                current is DeviceCalendarsAvailable,
+          ),
+
+          // Listener for errors and notifications
+          BlocListener<CalendarManagementBloc, CalendarManagementState>(
+            listener: (context, state) {
+              if (state is CalendarManagementError) {
+                ErrorUtils.showErrorSnackBar(context, state.message);
+              } else if (state is CalendarSyncComplete) {
+                ErrorUtils.showSuccessSnackBar(
+                  context,
+                  'Successfully synced ${state.eventCount} events',
+                );
+              } else if (state is CalendarSyncError) {
+                ErrorUtils.showErrorSnackBar(context, state.message);
+              }
+            },
+            listenWhen: (previous, current) =>
+                current is CalendarManagementError ||
+                current is CalendarSyncComplete ||
+                current is CalendarSyncError,
+          ),
+        ],
+        child: BlocBuilder<CalendarManagementBloc, CalendarManagementState>(
+          buildWhen: (previous, current) {
+            // Only rebuild for these specific states
+            return current is CalendarManagementLoading ||
+                current is CalendarManagementLoaded ||
+                current is CalendarSyncing;
+          },
+          builder: (context, state) {
+            if (state is CalendarManagementLoading) {
+              return const LoadingIndicator(message: 'Loading calendars...');
+            } else if (state is CalendarManagementLoaded) {
+              return _buildCalendarList(state);
+            } else if (state is CalendarSyncing) {
+              return const LoadingIndicator(message: 'Syncing calendar...');
+            } else {
+              return const Center(child: Text('Loading...'));
+            }
+          },
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAddCalendarOptions,
@@ -77,8 +113,7 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
     );
   }
 
-  Widget _buildCalendarList(
-      BuildContext context, CalendarManagementLoaded state) {
+  Widget _buildCalendarList(CalendarManagementLoaded state) {
     if (state.calendars.isEmpty) {
       return const Center(
         child: Text('No calendars found. Add a calendar to get started.'),
@@ -152,9 +187,7 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
                 title: const Text('Import Device Calendars'),
                 onTap: () {
                   Navigator.pop(context);
-                  context.read<CalendarManagementBloc>().add(
-                        const ImportDeviceCalendars(),
-                      );
+                  widget.onImportDeviceCalendars(); // Use the callback instead
                 },
               ),
             ],
@@ -162,6 +195,116 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
         );
       },
     );
+  }
+
+  void _showDeviceCalendarSelectionDialog(List<dynamic> deviceCalendars) {
+    print("SHOWING DIALOG for ${deviceCalendars.length} device calendars");
+
+    // Track selected calendars
+    Set<dynamic> selectedCalendars = {};
+
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Prevent dismissing by tapping outside
+      builder: (dialogContext) {
+        return StatefulBuilder(builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Select Device Calendars'),
+            content: SizedBox(
+              width: double.maxFinite,
+              height: 300, // Fixed height for the list
+              child: Column(
+                children: [
+                  Text('Found ${deviceCalendars.length} device calendars'),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: deviceCalendars.length,
+                      itemBuilder: (context, index) {
+                        final deviceCalendar = deviceCalendars[index];
+                        final bool isSelected =
+                            selectedCalendars.contains(deviceCalendar);
+
+                        return CheckboxListTile(
+                          title:
+                              Text(deviceCalendar.name ?? 'Unnamed Calendar'),
+                          value: isSelected,
+                          onChanged: (bool? value) {
+                            print(
+                                "Calendar selection changed: ${deviceCalendar.name} - $value");
+                            setDialogState(() {
+                              if (value == true) {
+                                selectedCalendars.add(deviceCalendar);
+                              } else {
+                                selectedCalendars.remove(deviceCalendar);
+                              }
+                            });
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  print(
+                      "Import button pressed for ${selectedCalendars.length} calendars");
+                  Navigator.pop(dialogContext);
+                  _importSelectedDeviceCalendars(selectedCalendars.toList());
+                },
+                child: const Text('Import Selected'),
+              ),
+            ],
+          );
+        });
+      },
+    );
+  }
+
+  void _importSelectedDeviceCalendars(List<dynamic> selectedCalendars) {
+    if (selectedCalendars.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('No calendars selected')));
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Importing ${selectedCalendars.length} calendars...')));
+
+    // Get a reference to the bloc
+    final bloc = BlocProvider.of<CalendarManagementBloc>(context);
+
+    // Process each selected calendar
+    for (final deviceCalendar in selectedCalendars) {
+      print("Processing calendar: ${deviceCalendar.name}");
+
+      // Create a calendar model for the device calendar
+      final newCalendar = CalendarModel(
+        id: _uuid.v4(),
+        name: deviceCalendar.name ?? 'Device Calendar',
+        color: deviceCalendar.color != null
+            ? Color(deviceCalendar.color!)
+            : Colors.blue,
+        userId: widget.user.id,
+        type: CalendarType.device,
+        deviceCalendarId: deviceCalendar.id,
+      );
+
+      // Add the calendar
+      print("Adding calendar to bloc: ${newCalendar.name}");
+      bloc.add(AddCalendar(newCalendar));
+
+      // Sync the calendar
+      print("Syncing calendar: ${newCalendar.name}");
+      bloc.add(SyncDeviceCalendar(newCalendar));
+    }
   }
 
   void _showAddCalendarDialog(CalendarType type) {
@@ -268,65 +411,5 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
         ErrorUtils.showErrorSnackBar(
             context, 'This calendar type cannot be synced');
     }
-  }
-
-  void _showDeviceCalendarSelection(
-      BuildContext context, List<dynamic> deviceCalendars) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Select Device Calendars'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: deviceCalendars.length,
-            itemBuilder: (context, index) {
-              final deviceCalendar = deviceCalendars[index];
-              return ListTile(
-                title: Text(deviceCalendar.name ?? 'Unnamed Calendar'),
-                leading: Icon(
-                  Icons.calendar_today,
-                  color: deviceCalendar.color != null
-                      ? Color(deviceCalendar.color)
-                      : Colors.blue,
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-
-                  // Create a new calendar from the device calendar
-                  final newCalendar = CalendarModel(
-                    id: _uuid.v4(),
-                    name: deviceCalendar.name ?? 'Device Calendar',
-                    color: deviceCalendar.color != null
-                        ? Color(deviceCalendar.color)
-                        : Colors.blue,
-                    userId: widget.user.id,
-                    type: CalendarType.device,
-                    deviceCalendarId: deviceCalendar.id,
-                  );
-
-                  // Add the calendar
-                  context
-                      .read<CalendarManagementBloc>()
-                      .add(AddCalendar(newCalendar));
-
-                  // Immediately sync it
-                  context
-                      .read<CalendarManagementBloc>()
-                      .add(SyncDeviceCalendar(newCalendar));
-                },
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
   }
 }

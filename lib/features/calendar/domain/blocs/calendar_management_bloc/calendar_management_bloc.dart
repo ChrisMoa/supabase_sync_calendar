@@ -9,7 +9,8 @@ import '../../../data/services/webdav_calendar_service.dart';
 import 'calendar_management_event.dart';
 import 'calendar_management_state.dart';
 
-class CalendarManagementBloc extends Bloc<CalendarManagementEvent, CalendarManagementState> {
+class CalendarManagementBloc
+    extends Bloc<CalendarManagementEvent, CalendarManagementState> {
   final CalendarManagementRepository _calendarRepo;
   final CalendarRepository _eventRepo;
   final WebDAVCalendarService _webdavService = WebDAVCalendarService();
@@ -27,14 +28,37 @@ class CalendarManagementBloc extends Bloc<CalendarManagementEvent, CalendarManag
           userId: userId,
         ),
         super(const CalendarManagementInitial()) {
-    on<LoadCalendars>(_onLoadCalendars);
-    on<AddCalendar>(_onAddCalendar);
+    print('CalendarManagementBloc initialized');
+
+    on<LoadCalendars>((event, emit) {
+      print('LoadCalendars event handler called');
+      return _onLoadCalendars(event, emit);
+    });
+
+    on<AddCalendar>((event, emit) {
+      print('AddCalendar event handler called');
+      return _onAddCalendar(event, emit);
+    });
+
+    on<SyncDeviceCalendar>((event, emit) {
+      print(
+          'SyncDeviceCalendar event handler called for ${event.calendar.name}');
+      return _onSyncDeviceCalendar(event, emit);
+    });
+
+    // Register other event handlers...
     on<UpdateCalendar>(_onUpdateCalendar);
     on<DeleteCalendar>(_onDeleteCalendar);
     on<SetDefaultCalendar>(_onSetDefaultCalendar);
     on<SyncWebDAVCalendar>(_onSyncWebDAVCalendar);
-    on<SyncDeviceCalendar>(_onSyncDeviceCalendar);
     on<ImportDeviceCalendars>(_onImportDeviceCalendars);
+  }
+
+  // Override add method to trace events
+  @override
+  void add(CalendarManagementEvent event) {
+    print('Adding event to CalendarManagementBloc: ${event.runtimeType}');
+    super.add(event);
   }
 
   Future<void> _onLoadCalendars(
@@ -70,7 +94,9 @@ class CalendarManagementBloc extends Bloc<CalendarManagementEvent, CalendarManag
       if (currentState is CalendarManagementLoaded) {
         emit(CalendarManagementLoaded(
           calendars: [...currentState.calendars, newCalendar],
-          defaultCalendar: newCalendar.isDefault ? newCalendar : currentState.defaultCalendar,
+          defaultCalendar: newCalendar.isDefault
+              ? newCalendar
+              : currentState.defaultCalendar,
         ));
       }
     } catch (e) {
@@ -95,10 +121,12 @@ class CalendarManagementBloc extends Bloc<CalendarManagementEvent, CalendarManag
       }
 
       // Update the calendar
-      final updatedCalendar = await _calendarRepo.updateCalendar(event.calendar);
+      final updatedCalendar =
+          await _calendarRepo.updateCalendar(event.calendar);
 
       // Check if the color has changed
-      if (previousCalendar != null && previousCalendar.color != updatedCalendar.color) {
+      if (previousCalendar != null &&
+          previousCalendar.color != updatedCalendar.color) {
         // Update all events' colors associated with this calendar
         await _updateEventsColorForCalendar(updatedCalendar);
       }
@@ -111,7 +139,9 @@ class CalendarManagementBloc extends Bloc<CalendarManagementEvent, CalendarManag
 
         emit(CalendarManagementLoaded(
           calendars: updatedCalendars,
-          defaultCalendar: updatedCalendar.isDefault ? updatedCalendar : currentState.defaultCalendar,
+          defaultCalendar: updatedCalendar.isDefault
+              ? updatedCalendar
+              : currentState.defaultCalendar,
         ));
       }
     } catch (e) {
@@ -131,7 +161,8 @@ class CalendarManagementBloc extends Bloc<CalendarManagementEvent, CalendarManag
         await _eventRepo.updateEvent(updatedEvent);
       }
 
-      print('Updated colors for ${events.length} events in calendar ${calendar.name}');
+      print(
+          'Updated colors for ${events.length} events in calendar ${calendar.name}');
     } catch (e) {
       print('Error updating event colors: $e');
       // Don't throw here, just log the error to not interrupt the calendar update
@@ -147,10 +178,13 @@ class CalendarManagementBloc extends Bloc<CalendarManagementEvent, CalendarManag
 
       final currentState = state;
       if (currentState is CalendarManagementLoaded) {
-        final updatedCalendars = currentState.calendars.where((calendar) => calendar.id != event.calendarId).toList();
+        final updatedCalendars = currentState.calendars
+            .where((calendar) => calendar.id != event.calendarId)
+            .toList();
 
         // Check if we deleted the default calendar
-        final isDefaultDeleted = currentState.defaultCalendar?.id == event.calendarId;
+        final isDefaultDeleted =
+            currentState.defaultCalendar?.id == event.calendarId;
         CalendarModel? newDefault;
 
         if (isDefaultDeleted && updatedCalendars.isNotEmpty) {
@@ -170,7 +204,8 @@ class CalendarManagementBloc extends Bloc<CalendarManagementEvent, CalendarManag
         } else {
           emit(CalendarManagementLoaded(
             calendars: updatedCalendars,
-            defaultCalendar: isDefaultDeleted ? null : currentState.defaultCalendar,
+            defaultCalendar:
+                isDefaultDeleted ? null : currentState.defaultCalendar,
           ));
         }
       }
@@ -234,7 +269,8 @@ class CalendarManagementBloc extends Bloc<CalendarManagementEvent, CalendarManag
       // Reload the full state
       add(const LoadCalendars());
     } catch (e) {
-      emit(CalendarSyncError(event.calendar.id, 'Failed to sync WebDAV calendar: $e'));
+      emit(CalendarSyncError(
+          event.calendar.id, 'Failed to sync WebDAV calendar: $e'));
     }
   }
 
@@ -245,23 +281,43 @@ class CalendarManagementBloc extends Bloc<CalendarManagementEvent, CalendarManag
     emit(CalendarSyncing(event.calendar.id));
 
     try {
+      if (event.calendar.deviceCalendarId == null) {
+        throw Exception('Missing device calendar ID');
+      }
+
+      print(
+          'Starting sync for device calendar: ${event.calendar.name} (${event.calendar.deviceCalendarId})');
+
       // Fetch events from device calendar
       final events = await _deviceService.syncDeviceCalendar(event.calendar);
+      print('Retrieved ${events.length} events from device calendar');
 
       // Delete existing events for this calendar
       await _deleteExistingCalendarEvents(event.calendar.id);
+      print('Deleted existing events for calendar');
 
-      // Save the new events
-      for (final event in events) {
-        await _eventRepo.createEvent(event);
+      // Save the new events in batches to avoid memory issues
+      const batchSize = 50;
+      for (var i = 0; i < events.length; i += batchSize) {
+        final end =
+            (i + batchSize < events.length) ? i + batchSize : events.length;
+        final batch = events.sublist(i, end);
+
+        for (final event in batch) {
+          await _eventRepo.createEvent(event);
+        }
+        print('Imported events ${i + 1} to $end of ${events.length}');
       }
 
       emit(CalendarSyncComplete(event.calendar.id, events.length));
+      print('Sync completed for calendar ${event.calendar.name}');
 
       // Reload the full state
       add(const LoadCalendars());
     } catch (e) {
-      emit(CalendarSyncError(event.calendar.id, 'Failed to sync device calendar: $e'));
+      print('Error syncing device calendar: $e');
+      emit(CalendarSyncError(
+          event.calendar.id, 'Failed to sync device calendar: $e'));
     }
   }
 
@@ -269,13 +325,21 @@ class CalendarManagementBloc extends Bloc<CalendarManagementEvent, CalendarManag
     ImportDeviceCalendars event,
     Emitter<CalendarManagementState> emit,
   ) async {
+    print("_onImportDeviceCalendars called");
+    emit(const CalendarManagementLoading());
+
     try {
       // Get device calendars
+      print("Requesting device calendars...");
       final deviceCalendars = await _deviceService.getDeviceCalendars();
+      print("Retrieved ${deviceCalendars.length} device calendars in bloc");
 
-      // Emit state with device calendars for UI to display selection options
+      // IMPORTANT: Use await here to ensure the state is emitted
+      // before any other operations proceed
       emit(DeviceCalendarsAvailable(deviceCalendars));
+      print("DeviceCalendarsAvailable state emitted");
     } catch (e) {
+      print("Error importing device calendars: $e");
       emit(CalendarManagementError('Failed to import device calendars: $e'));
     }
   }
@@ -284,7 +348,8 @@ class CalendarManagementBloc extends Bloc<CalendarManagementEvent, CalendarManag
   Future<void> _deleteExistingCalendarEvents(String calendarId) async {
     // Get all events for this calendar
     final events = await _eventRepo.getEvents();
-    final calendarEvents = events.where((e) => e.calendarId == calendarId).toList();
+    final calendarEvents =
+        events.where((e) => e.calendarId == calendarId).toList();
 
     // Delete each event
     for (final event in calendarEvents) {
