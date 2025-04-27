@@ -1,9 +1,11 @@
+// lib/core/utils/supabase_utils.dart
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupabaseUtils {
   // Table names
   static const String eventsTable = 'calendar_events';
   static const String calendarsTable = 'calendars';
+  static const String seriesTable = 'event_series'; // Add this line
 
   // Column names for events table
   static const String colId = 'id';
@@ -18,6 +20,16 @@ class SupabaseUtils {
   static const String colReminder = 'reminder';
   static const String colAppendixes = 'appendixes';
   static const String colIsExternalReadOnly = 'is_external_read_only';
+  static const String colSeriesId = 'series_id'; // Add this line
+
+  // Column names for series table
+  static const String colRepeatType = 'repeat_type';
+  static const String colRepeatInterval = 'repeat_interval';
+  static const String colRepeatDaysOfWeek = 'repeat_days_of_week';
+  static const String colEndType = 'end_type';
+  static const String colOccurrences = 'occurrences';
+  static const String colEndDate = 'end_date';
+  static const String colTemplateEventId = 'template_event_id';
 
   // Add column names for calendars table
   static const String colName = 'name';

@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_management_bloc/calendar_management_bloc.dart';
+import 'package:supabase_sync_calendar/features/calendar/domain/blocs/event_series_bloc/event_series_bloc.dart';
 
 import 'features/auth/domain/blocs/custom_auth_bloc/custom_auth_bloc.dart';
 import 'features/auth/domain/blocs/custom_auth_bloc/custom_auth_state.dart';
@@ -33,6 +34,22 @@ class MyApp extends StatelessWidget {
         ),
         BlocProvider<CalendarBloc>(
           create: (context) => CalendarBloc(),
+        ),
+        BlocProvider<EventSeriesBloc>(
+          create: (context) {
+            final authState = context.read<CustomAuthBloc>().state;
+            if (authState is AuthAuthenticated) {
+              return EventSeriesBloc(
+                supabaseClient: authState.supabaseClient,
+                userId: authState.user.id,
+              );
+            }
+            // Return a placeholder that will be replaced when authenticated
+            return EventSeriesBloc(
+              supabaseClient: Supabase.instance.client,
+              userId: '',
+            );
+          },
         ),
         BlocProvider<CalendarManagementBloc>(
           create: (context) {

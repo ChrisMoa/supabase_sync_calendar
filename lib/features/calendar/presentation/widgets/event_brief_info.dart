@@ -10,6 +10,7 @@ class EventBriefInfo extends StatefulWidget {
   final Function(CalendarEventModel) onDuplicate;
   final Function(CalendarEventModel) onDelete;
   final Function(CalendarEventModel)? onDurationChange;
+  final Function(CalendarEventModel)? onMakeSeries; // Add this callback
 
   const EventBriefInfo({
     super.key,
@@ -20,6 +21,7 @@ class EventBriefInfo extends StatefulWidget {
     required this.onDuplicate,
     required this.onDelete,
     this.onDurationChange,
+    this.onMakeSeries, // Add this parameter
   });
 
   @override
@@ -187,6 +189,24 @@ class _EventBriefInfoState extends State<EventBriefInfo>
                           ),
                         ],
 
+                        // Show series icon if event is part of a series
+                        if (_eventCopy.seriesId != null) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              const Icon(Icons.repeat, size: 16),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Recurring event',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Theme.of(context).primaryColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+
                         // Add the duration controls
                         if (!_eventCopy.wholeDay) _buildDurationControls(),
 
@@ -195,6 +215,21 @@ class _EventBriefInfoState extends State<EventBriefInfo>
                         Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
+                            // Add Series button if event isn't part of a series
+                            if (widget.onMakeSeries != null &&
+                                _eventCopy.seriesId == null)
+                              TextButton.icon(
+                                onPressed: () {
+                                  widget.onClose();
+                                  widget.onMakeSeries!(_eventCopy);
+                                },
+                                icon: const Icon(Icons.repeat, size: 18),
+                                label: const Text('Make Series'),
+                                style: TextButton.styleFrom(
+                                  padding:
+                                      const EdgeInsets.symmetric(horizontal: 8),
+                                ),
+                              ),
                             TextButton.icon(
                               onPressed: () {
                                 widget.onClose();

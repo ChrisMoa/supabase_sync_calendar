@@ -16,6 +16,7 @@ class CalendarEventModel extends Equatable {
   final List<String> appendixes;
   final bool
       isExternalReadOnly; // Added to mark external sync events as read-only
+  final String? seriesId;
 
   const CalendarEventModel({
     required this.id,
@@ -30,6 +31,7 @@ class CalendarEventModel extends Equatable {
     this.reminder,
     this.appendixes = const [],
     this.isExternalReadOnly = false,
+    this.seriesId, // Add this parameter
   });
 
   CalendarEventModel copyWith({
@@ -44,6 +46,7 @@ class CalendarEventModel extends Equatable {
     String? calendarId,
     DateTime? reminder,
     List<String>? appendixes,
+    String? seriesId,
   }) {
     return CalendarEventModel(
       id: id ?? this.id,
@@ -57,6 +60,7 @@ class CalendarEventModel extends Equatable {
       calendarId: calendarId ?? this.calendarId,
       reminder: reminder ?? this.reminder,
       appendixes: appendixes ?? this.appendixes,
+      seriesId: seriesId ?? this.seriesId,
     );
   }
 
@@ -82,6 +86,7 @@ class CalendarEventModel extends Equatable {
       appendixes: json['appendixes'] != null
           ? List<String>.from(json['appendixes'] as List)
           : const [],
+      seriesId: json['series_id'] as String?,
     );
   }
 
@@ -100,6 +105,7 @@ class CalendarEventModel extends Equatable {
       'calendar_id': calendarId,
       'reminder': reminder?.toIso8601String(),
       'appendixes': appendixes,
+      'series_id': seriesId,
     };
   }
 
@@ -115,6 +121,7 @@ class CalendarEventModel extends Equatable {
         wholeDay,
         calendarId,
         reminder,
-        appendixes
+        appendixes,
+        seriesId,
       ];
 }
