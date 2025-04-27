@@ -129,7 +129,13 @@ class EventSeriesRepository {
               : actualRangeStart
                   .add(const Duration(days: 365))); // Default to 1 year
 
-      DateTime baseDate = templateEvent.start;
+      final int templateHour = templateEvent.start.hour;
+      final int templateMinute = templateEvent.start.minute;
+      final int templateSecond = templateEvent.start.second;
+      // Now handle the recurring weeks based on interval
+      // Start from the week after the template's week
+      DateTime nextWeekStart = _getStartOfWeek(templateEvent.start)
+          .add(Duration(days: 7 * series.repeatInterval));
 
       // For weekly recurrences with specific days
       if (series.repeatType == SeriesRepeatType.weekly &&
@@ -147,11 +153,18 @@ class EventSeriesRepository {
         for (final weekday in daysToGenerate) {
           // Calculate days to add to reach this weekday from the template date
           int daysToAdd = weekday - templateEvent.start.weekday;
-          if (daysToAdd <= 0)
+          if (daysToAdd <= 0) {
             daysToAdd += 7; // Move to next week if day already passed
+          }
 
-          final DateTime eventDate =
-              templateEvent.start.add(Duration(days: daysToAdd));
+          final DateTime eventDate = DateTime(
+            nextWeekStart.year,
+            nextWeekStart.month,
+            nextWeekStart.day + daysToAdd,
+            templateHour,
+            templateMinute,
+            templateSecond,
+          );
           final DateTime eventEnd = eventDate.add(eventDuration);
 
           // Only add if in range
@@ -167,11 +180,6 @@ class EventSeriesRepository {
             events.add(event);
           }
         }
-
-        // Now handle the recurring weeks based on interval
-        // Start from the week after the template's week
-        DateTime nextWeekStart = _getStartOfWeek(templateEvent.start)
-            .add(Duration(days: 7 * series.repeatInterval));
 
         int occurrenceCount =
             1 + daysToGenerate.length; // Count template + first week events
@@ -189,8 +197,14 @@ class EventSeriesRepository {
           for (final weekday in sortedDays) {
             // Calculate the date for this weekday in this week
             final int daysToAdd = weekday - 1; // 1=Monday, so offset by 1
-            final DateTime eventDate =
-                nextWeekStart.add(Duration(days: daysToAdd));
+            final DateTime eventDate = DateTime(
+              nextWeekStart.year,
+              nextWeekStart.month,
+              nextWeekStart.day + daysToAdd,
+              templateHour,
+              templateMinute,
+              templateSecond,
+            );
 
             // Skip if before range start or after range end
             if (eventDate.isBefore(actualRangeStart) ||
