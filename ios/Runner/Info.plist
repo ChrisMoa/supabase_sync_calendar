@@ -47,5 +47,24 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+			<string>ics</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>iCalendar File</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+			<string>com.apple.ical-event</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
