@@ -76,9 +76,17 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
         event.templateEvent,
       );
 
-      // Save the generated events
+      // Save the generated events (first event is already updated template)
       final List<CalendarEventModel> savedEvents = [];
-      for (final generatedEvent in generatedEvents) {
+
+      // The first event is the template - update it
+      final templateEvent = generatedEvents.first;
+      await _eventRepository.updateEvent(templateEvent);
+      savedEvents.add(templateEvent);
+
+      // Create all the other events
+      for (int i = 1; i < generatedEvents.length; i++) {
+        final generatedEvent = generatedEvents[i];
         final savedEvent = await _eventRepository.createEvent(generatedEvent);
         savedEvents.add(savedEvent);
       }

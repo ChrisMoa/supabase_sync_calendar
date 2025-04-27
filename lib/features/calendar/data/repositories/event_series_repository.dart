@@ -107,11 +107,15 @@ class EventSeriesRepository {
 
       // Skip if series type is none
       if (series.repeatType == SeriesRepeatType.none) {
-        return [templateEvent.copyWith(seriesId: series.id)];
+        // Just update the template event with the series ID
+        final updatedTemplate = templateEvent.copyWith(seriesId: series.id);
+        events.add(updatedTemplate);
+        return events;
       }
 
-      // Use template event as the first occurrence
-      events.add(templateEvent.copyWith(seriesId: series.id));
+      // Update template event with series ID and add it to events
+      final updatedTemplate = templateEvent.copyWith(seriesId: series.id);
+      events.add(updatedTemplate);
 
       // Calculate event duration to maintain it for all occurrences
       final Duration eventDuration =
@@ -125,52 +129,161 @@ class EventSeriesRepository {
               : actualRangeStart
                   .add(const Duration(days: 365))); // Default to 1 year
 
-      DateTime nextStart = _getNextOccurrenceStart(
-        templateEvent.start,
-        series.repeatType,
-        series.repeatInterval,
-        series.repeatDaysOfWeek,
-      );
+      DateTime baseDate = templateEvent.start;
 
-      int occurrenceCount = 1; // Count the template event as first occurrence
-      final int maxOccurrences =
-          series.endType == SeriesEndType.afterOccurrences
-              ? series.occurrences!
-              : 1000; // Reasonable limit for infinite series
+      // For weekly recurrences with specific days
+      if (series.repeatType == SeriesRepeatType.weekly &&
+          series.repeatDaysOfWeek.isNotEmpty) {
+        // Sort days to ensure correct order
+        final sortedDays = List<int>.from(series.repeatDaysOfWeek)..sort();
 
-      // Generate occurrences
-      while (nextStart.isBefore(actualRangeEnd) &&
-          occurrenceCount < maxOccurrences &&
-          !(series.endType == SeriesEndType.onDate &&
-              nextStart.isAfter(series.endDate!))) {
-        // Create the event with updated dates
-        final DateTime nextEnd = nextStart.add(eventDuration);
+        // Filter out the template's weekday if it's in the list, to avoid duplication
+        final templateWeekday = templateEvent.start.weekday;
+        final daysToGenerate =
+            sortedDays.where((day) => day != templateWeekday).toList();
 
-        final String eventId = _uuid.v4();
-        final CalendarEventModel event = templateEvent.copyWith(
-          id: eventId,
-          start: nextStart,
-          end: nextEnd,
-          seriesId: series.id,
-        );
+        // Generate the initial set of events for the first week
+        // (for the selected days other than the template day)
+        for (final weekday in daysToGenerate) {
+          // Calculate days to add to reach this weekday from the template date
+          int daysToAdd = weekday - templateEvent.start.weekday;
+          if (daysToAdd <= 0)
+            daysToAdd += 7; // Move to next week if day already passed
 
-        events.add(event);
+          final DateTime eventDate =
+              templateEvent.start.add(Duration(days: daysToAdd));
+          final DateTime eventEnd = eventDate.add(eventDuration);
 
-        // Calculate next occurrence
-        nextStart = _getNextOccurrenceStart(
-          nextStart,
+          // Only add if in range
+          if (!eventDate.isAfter(actualRangeEnd)) {
+            final String eventId = _uuid.v4();
+            final CalendarEventModel event = templateEvent.copyWith(
+              id: eventId,
+              start: eventDate,
+              end: eventEnd,
+              seriesId: series.id,
+            );
+
+            events.add(event);
+          }
+        }
+
+        // Now handle the recurring weeks based on interval
+        // Start from the week after the template's week
+        DateTime nextWeekStart = _getStartOfWeek(templateEvent.start)
+            .add(Duration(days: 7 * series.repeatInterval));
+
+        int occurrenceCount =
+            1 + daysToGenerate.length; // Count template + first week events
+        final int maxOccurrences =
+            series.endType == SeriesEndType.afterOccurrences
+                ? series.occurrences!
+                : 1000; // Reasonable limit for infinite series
+
+        // Loop through weeks based on the interval
+        while (nextWeekStart.isBefore(actualRangeEnd) &&
+            occurrenceCount < maxOccurrences &&
+            !(series.endType == SeriesEndType.onDate &&
+                nextWeekStart.isAfter(series.endDate!))) {
+          // For each week, add events for all specified days
+          for (final weekday in sortedDays) {
+            // Calculate the date for this weekday in this week
+            final int daysToAdd = weekday - 1; // 1=Monday, so offset by 1
+            final DateTime eventDate =
+                nextWeekStart.add(Duration(days: daysToAdd));
+
+            // Skip if before range start or after range end
+            if (eventDate.isBefore(actualRangeStart) ||
+                eventDate.isAfter(actualRangeEnd)) {
+              continue;
+            }
+
+            // Skip if we've reached the end date
+            if (series.endType == SeriesEndType.onDate &&
+                eventDate.isAfter(series.endDate!)) {
+              continue;
+            }
+
+            // Create the event
+            final DateTime eventEnd = eventDate.add(eventDuration);
+            final String eventId = _uuid.v4();
+            final CalendarEventModel event = templateEvent.copyWith(
+              id: eventId,
+              start: eventDate,
+              end: eventEnd,
+              seriesId: series.id,
+            );
+
+            events.add(event);
+            occurrenceCount++;
+
+            // Check if we've reached the max occurrences
+            if (series.endType == SeriesEndType.afterOccurrences &&
+                occurrenceCount >= series.occurrences!) {
+              break;
+            }
+          }
+
+          // Move to the next week based on interval
+          nextWeekStart =
+              nextWeekStart.add(Duration(days: 7 * series.repeatInterval));
+        }
+      } else {
+        // Handle other recurrence types (daily, monthly, yearly)
+        // We'll start from the next occurrence after the template
+        DateTime nextStart = _getNextOccurrenceStart(
+          templateEvent.start,
           series.repeatType,
           series.repeatInterval,
           series.repeatDaysOfWeek,
         );
 
-        occurrenceCount++;
+        int occurrenceCount = 1; // Count the template event as first occurrence
+        final int maxOccurrences =
+            series.endType == SeriesEndType.afterOccurrences
+                ? series.occurrences!
+                : 1000; // Reasonable limit for infinite series
+
+        // Generate occurrences
+        while (nextStart.isBefore(actualRangeEnd) &&
+            occurrenceCount < maxOccurrences &&
+            !(series.endType == SeriesEndType.onDate &&
+                nextStart.isAfter(series.endDate!))) {
+          // Create the event with updated dates
+          final DateTime nextEnd = nextStart.add(eventDuration);
+
+          final String eventId = _uuid.v4();
+          final CalendarEventModel event = templateEvent.copyWith(
+            id: eventId,
+            start: nextStart,
+            end: nextEnd,
+            seriesId: series.id,
+          );
+
+          events.add(event);
+          occurrenceCount++;
+
+          // Calculate next occurrence
+          nextStart = _getNextOccurrenceStart(
+            nextStart,
+            series.repeatType,
+            series.repeatInterval,
+            series.repeatDaysOfWeek,
+          );
+        }
       }
 
       return events;
     } catch (e) {
       throw Exception('Failed to generate series events: $e');
     }
+  }
+
+  // Helper method to get the start of the week (Monday) for a given date
+  DateTime _getStartOfWeek(DateTime date) {
+    // Calculate days to subtract to get to Monday (weekday 1)
+    int daysToSubtract = date.weekday - 1;
+    return DateTime(date.year, date.month, date.day - daysToSubtract);
   }
 
   // Helper method to calculate next occurrence based on repeat rules
@@ -180,46 +293,23 @@ class EventSeriesRepository {
     int repeatInterval,
     List<int> repeatDaysOfWeek,
   ) {
-    DateTime nextDate;
-
     switch (repeatType) {
       case SeriesRepeatType.none:
         return currentStart; // Should not happen
 
       case SeriesRepeatType.daily:
-        nextDate = currentStart.add(Duration(days: repeatInterval));
-        break;
+        // For daily, simply add the interval in days
+        return currentStart.add(Duration(days: repeatInterval));
 
       case SeriesRepeatType.weekly:
         if (repeatDaysOfWeek.isEmpty) {
-          // Simple case: just add weeks
-          nextDate = currentStart.add(Duration(days: 7 * repeatInterval));
+          // Simple case: just add weeks based on interval
+          return currentStart.add(Duration(days: 7 * repeatInterval));
         } else {
-          // Complex case: find next day of week in the list
-          // 1-7 where 1 is Monday (ISO week format)
-          int currentDayOfWeek = currentStart.weekday;
-          int nextDayIndex = -1;
-
-          // Find the next day of week in the list
-          for (int i = 0; i < repeatDaysOfWeek.length; i++) {
-            if (repeatDaysOfWeek[i] > currentDayOfWeek) {
-              nextDayIndex = i;
-              break;
-            }
-          }
-
-          if (nextDayIndex >= 0) {
-            // Found a day of week later in the current week
-            int daysToAdd = repeatDaysOfWeek[nextDayIndex] - currentDayOfWeek;
-            nextDate = currentStart.add(Duration(days: daysToAdd));
-          } else {
-            // No days later in this week, move to first day in next week
-            int daysToNextWeek = 8 - currentDayOfWeek + repeatDaysOfWeek[0];
-            nextDate = currentStart
-                .add(Duration(days: daysToNextWeek + (repeatInterval - 1) * 7));
-          }
+          // This case is now handled separately in generateSeriesEvents
+          // for better control over weekly recurrence with multiple days
+          return currentStart.add(Duration(days: 7 * repeatInterval));
         }
-        break;
 
       case SeriesRepeatType.monthly:
         // Add months, keeping the same day of month when possible
@@ -239,7 +329,7 @@ class EventSeriesRepository {
           day = maxDays;
         }
 
-        nextDate = DateTime(
+        return DateTime(
           year,
           month,
           day,
@@ -247,11 +337,10 @@ class EventSeriesRepository {
           currentStart.minute,
           currentStart.second,
         );
-        break;
 
       case SeriesRepeatType.yearly:
         // Simply add years
-        nextDate = DateTime(
+        return DateTime(
           currentStart.year + repeatInterval,
           currentStart.month,
           currentStart.day,
@@ -259,9 +348,6 @@ class EventSeriesRepository {
           currentStart.minute,
           currentStart.second,
         );
-        break;
     }
-
-    return nextDate;
   }
 }
