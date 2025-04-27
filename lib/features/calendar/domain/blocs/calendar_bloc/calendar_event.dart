@@ -105,3 +105,12 @@ class CalendarSyncEvent extends CalendarEvent {
         if (eventId != null) eventId!,
       ];
 }
+
+class CalendarFilterByCalendar extends CalendarEvent {
+  final String? calendarId; // Null means show all calendars
+
+  const CalendarFilterByCalendar(this.calendarId);
+
+  @override
+  List<Object> get props => calendarId != null ? [calendarId!] : [];
+}

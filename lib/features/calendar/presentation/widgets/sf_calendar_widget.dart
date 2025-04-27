@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_sync_calendar/core/models/calendar_event_model.dart';
+import 'package:supabase_sync_calendar/core/models/calendar_model.dart';
 import 'package:supabase_sync_calendar/core/utils/time_utils.dart';
+import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_management_bloc/calendar_management_bloc.dart';
+import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_management_bloc/calendar_management_state.dart';
 import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/event_edit_dialog.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
 import 'package:uuid/uuid.dart';
@@ -145,7 +149,10 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
   }
 
   _AppointmentDataSource _getCalendarDataSource() {
+    print('SfCalendarWidget: Converting ${widget.events.length} events to appointments');
+
     List<Appointment> appointments = widget.events.map((event) {
+      print('Processing event: ${event.id}, ${event.title}, ${event.start}-${event.end}');
       return Appointment(
         id: event.id,
         subject: event.title,
@@ -158,6 +165,7 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
       );
     }).toList();
 
+    print('Created ${appointments.length} appointments for calendar');
     return _AppointmentDataSource(appointments);
   }
 
@@ -169,12 +177,9 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
     // Remove any existing overlay first
     _removeOverlay();
 
-    if (details.targetElement == CalendarElement.appointment &&
-        details.appointments != null &&
-        details.appointments!.isNotEmpty) {
+    if (details.targetElement == CalendarElement.appointment && details.appointments != null && details.appointments!.isNotEmpty) {
       final appointment = details.appointments!.first as Appointment;
-      final String eventId =
-          appointment.id.toString(); // Fix: Use toString() to safely get ID
+      final String eventId = appointment.id.toString(); // Fix: Use toString() to safely get ID
 
       // Find the event
       final event = widget.events.firstWhere(
@@ -186,12 +191,10 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _showEventInfo(event, details);
       });
-    } else if (details.targetElement == CalendarElement.calendarCell &&
-        details.date != null) {
+    } else if (details.targetElement == CalendarElement.calendarCell && details.date != null) {
       // Create new event when clicking on empty cell
       final snappedTime = _snapTimeToInterval(details.date!);
-      final endTime =
-          snappedTime.add(Duration(minutes: widget.timeSnapInterval));
+      final endTime = snappedTime.add(Duration(minutes: widget.timeSnapInterval));
 
       _showAddEventDialog(snappedTime, endTime);
     }
@@ -211,11 +214,8 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
       // For appointments, use either details.position or a reasonable default
       if (details.date != null) {
         // Try to calculate position based on the date/time
-        final timeAxisHeight =
-            calendarSize.height / (widget.endHour - widget.startHour);
-        final hourOffset = details.date!.hour -
-            widget.startHour.toInt() +
-            (details.date!.minute / 60.0);
+        final timeAxisHeight = calendarSize.height / (widget.endHour - widget.startHour);
+        final hourOffset = details.date!.hour - widget.startHour.toInt() + (details.date!.minute / 60.0);
 
         position = Offset(
           calendarPosition.dx + 20,
@@ -310,13 +310,51 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
   }
 
   void _showAddEventDialog(DateTime startTime, DateTime endTime) {
+    // Get available calendars from CalendarManagementBloc
+    final calendarManagementBloc = BlocProvider.of<CalendarManagementBloc>(context, listen: false);
+    final calendarManagementState = calendarManagementBloc.state;
+    List<CalendarModel> availableCalendars = [];
+    CalendarModel? defaultCalendar;
+
+    if (calendarManagementState is CalendarManagementLoaded) {
+      // Filter out invalid calendars to avoid any issues
+      availableCalendars = calendarManagementState.calendars.where((cal) => cal.id.isNotEmpty).toList();
+      defaultCalendar = calendarManagementState.defaultCalendar;
+
+      // Debug output
+      print('Found ${availableCalendars.length} calendars for dropdown');
+      for (var cal in availableCalendars) {
+        print('Calendar: ${cal.id}, ${cal.name}, ${cal.color}');
+      }
+    } else {
+      print('CalendarManagementState is not loaded: ${calendarManagementState.runtimeType}');
+    }
+
+    // Fallback if no calendars available
+    if (availableCalendars.isEmpty) {
+      // Create a default calendar for display purposes
+      availableCalendars = [
+        CalendarModel(
+          id: 'default',
+          name: 'Default Calendar',
+          color: Colors.blue,
+          userId: '',
+          type: CalendarType.local,
+          isDefault: true,
+        )
+      ];
+      defaultCalendar = availableCalendars.first;
+      print('Using fallback default calendar');
+    }
+
     showDialog(
       context: context,
       builder: (context) => EventEditDialog(
         startTime: startTime,
         endTime: endTime,
-        onSave: (title, description, start, end, color, wholeDay, calendarId,
-            reminder) {
+        calendarId: defaultCalendar?.id ?? availableCalendars.first.id,
+        color: defaultCalendar?.color ?? availableCalendars.first.color,
+        onSave: (title, description, start, end, color, wholeDay, calendarId, reminder) {
           final newEvent = CalendarEventModel(
             id: _uuid.v4(),
             title: title,
@@ -335,11 +373,61 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
             widget.onEventAdd!(newEvent);
           }
         },
+        calendars: availableCalendars,
       ),
     );
   }
 
   void _showEditEventDialog(CalendarEventModel event) {
+    // Get available calendars from CalendarManagementBloc
+    final calendarManagementBloc = BlocProvider.of<CalendarManagementBloc>(context, listen: false);
+    final calendarManagementState = calendarManagementBloc.state;
+    List<CalendarModel> availableCalendars = [];
+
+    if (calendarManagementState is CalendarManagementLoaded) {
+      // Filter out invalid calendars
+      availableCalendars = calendarManagementState.calendars.where((cal) => cal.id.isNotEmpty).toList();
+
+      // Debug output
+      print('Edit dialog: Found ${availableCalendars.length} calendars');
+      for (var cal in availableCalendars) {
+        print('Calendar: ${cal.id}, ${cal.name}, ${cal.color}');
+      }
+    } else {
+      print('Edit dialog: CalendarManagementState is not loaded: ${calendarManagementState.runtimeType}');
+    }
+
+    // Ensure the event's calendar is in the list, or add it if missing
+    bool eventCalendarExists = availableCalendars.any((cal) => cal.id == event.calendarId);
+
+    if (!eventCalendarExists && event.calendarId.isNotEmpty) {
+      // Add the event's calendar as a temporary item to avoid dropdown errors
+      availableCalendars.add(
+        CalendarModel(
+          id: event.calendarId,
+          name: 'Calendar',
+          color: event.color,
+          userId: '',
+          type: CalendarType.local,
+          isDefault: false,
+        ),
+      );
+    }
+
+    // Fallback if no calendars available
+    if (availableCalendars.isEmpty) {
+      availableCalendars = [
+        CalendarModel(
+          id: 'default',
+          name: 'Default Calendar',
+          color: Colors.blue,
+          userId: '',
+          type: CalendarType.local,
+          isDefault: true,
+        )
+      ];
+    }
+
     showDialog(
       context: context,
       builder: (context) => EventEditDialog(
@@ -351,8 +439,7 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
         wholeDay: event.wholeDay,
         calendarId: event.calendarId,
         reminder: event.reminder,
-        onSave: (title, description, start, end, color, wholeDay, calendarId,
-            reminder) {
+        onSave: (title, description, start, end, color, wholeDay, calendarId, reminder) {
           final updatedEvent = event.copyWith(
             title: title,
             description: description,
@@ -368,6 +455,7 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
             widget.onEventUpdate!(updatedEvent);
           }
         },
+        calendars: availableCalendars,
       ),
     );
   }
@@ -375,14 +463,12 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
   void _handleCalendarLongPress(CalendarLongPressDetails details) {
     _removeOverlay();
 
-    if (details.targetElement == CalendarElement.calendarCell &&
-        details.date != null) {
+    if (details.targetElement == CalendarElement.calendarCell && details.date != null) {
       final DateTime date = details.date!;
 
       // Snap the time to the nearest interval
       final DateTime snappedTime = _snapTimeToInterval(date);
-      final DateTime endTime =
-          snappedTime.add(Duration(minutes: widget.timeSnapInterval));
+      final DateTime endTime = snappedTime.add(Duration(minutes: widget.timeSnapInterval));
 
       _showAddEventDialog(snappedTime, endTime);
     }

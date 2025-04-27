@@ -1,0 +1,294 @@
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_sync_calendar/core/models/calendar_model.dart';
+
+import '../../../data/repositories/calendar_management_repository.dart';
+import '../../../data/repositories/calendar_repository.dart';
+import '../../../data/services/device_calendar_service.dart';
+import '../../../data/services/webdav_calendar_service.dart';
+import 'calendar_management_event.dart';
+import 'calendar_management_state.dart';
+
+class CalendarManagementBloc extends Bloc<CalendarManagementEvent, CalendarManagementState> {
+  final CalendarManagementRepository _calendarRepo;
+  final CalendarRepository _eventRepo;
+  final WebDAVCalendarService _webdavService = WebDAVCalendarService();
+  final DeviceCalendarService _deviceService = DeviceCalendarService();
+
+  CalendarManagementBloc({
+    required SupabaseClient supabaseClient,
+    required String userId,
+  })  : _calendarRepo = CalendarManagementRepository(
+          supabaseClient: supabaseClient,
+          userId: userId,
+        ),
+        _eventRepo = CalendarRepository(
+          supabaseClient: supabaseClient,
+          userId: userId,
+        ),
+        super(const CalendarManagementInitial()) {
+    on<LoadCalendars>(_onLoadCalendars);
+    on<AddCalendar>(_onAddCalendar);
+    on<UpdateCalendar>(_onUpdateCalendar);
+    on<DeleteCalendar>(_onDeleteCalendar);
+    on<SetDefaultCalendar>(_onSetDefaultCalendar);
+    on<SyncWebDAVCalendar>(_onSyncWebDAVCalendar);
+    on<SyncDeviceCalendar>(_onSyncDeviceCalendar);
+    on<ImportDeviceCalendars>(_onImportDeviceCalendars);
+  }
+
+  Future<void> _onLoadCalendars(
+    LoadCalendars event,
+    Emitter<CalendarManagementState> emit,
+  ) async {
+    emit(const CalendarManagementLoading());
+
+    try {
+      // Ensure there's a default calendar
+      final defaultCalendar = await _calendarRepo.ensureDefaultCalendar();
+
+      // Load all calendars
+      final calendars = await _calendarRepo.getCalendars();
+
+      emit(CalendarManagementLoaded(
+        calendars: calendars,
+        defaultCalendar: defaultCalendar,
+      ));
+    } catch (e) {
+      emit(CalendarManagementError('Failed to load calendars: $e'));
+    }
+  }
+
+  Future<void> _onAddCalendar(
+    AddCalendar event,
+    Emitter<CalendarManagementState> emit,
+  ) async {
+    try {
+      final newCalendar = await _calendarRepo.createCalendar(event.calendar);
+
+      final currentState = state;
+      if (currentState is CalendarManagementLoaded) {
+        emit(CalendarManagementLoaded(
+          calendars: [...currentState.calendars, newCalendar],
+          defaultCalendar: newCalendar.isDefault ? newCalendar : currentState.defaultCalendar,
+        ));
+      }
+    } catch (e) {
+      emit(CalendarManagementError('Failed to add calendar: $e'));
+    }
+  }
+
+  Future<void> _onUpdateCalendar(
+    UpdateCalendar event,
+    Emitter<CalendarManagementState> emit,
+  ) async {
+    try {
+      final previousCalendarState = state;
+      CalendarModel? previousCalendar;
+
+      // Find the previous state of the calendar
+      if (previousCalendarState is CalendarManagementLoaded) {
+        previousCalendar = previousCalendarState.calendars.firstWhere(
+          (cal) => cal.id == event.calendar.id,
+          orElse: () => event.calendar,
+        );
+      }
+
+      // Update the calendar
+      final updatedCalendar = await _calendarRepo.updateCalendar(event.calendar);
+
+      // Check if the color has changed
+      if (previousCalendar != null && previousCalendar.color != updatedCalendar.color) {
+        // Update all events' colors associated with this calendar
+        await _updateEventsColorForCalendar(updatedCalendar);
+      }
+
+      final currentState = state;
+      if (currentState is CalendarManagementLoaded) {
+        final updatedCalendars = currentState.calendars.map((calendar) {
+          return calendar.id == updatedCalendar.id ? updatedCalendar : calendar;
+        }).toList();
+
+        emit(CalendarManagementLoaded(
+          calendars: updatedCalendars,
+          defaultCalendar: updatedCalendar.isDefault ? updatedCalendar : currentState.defaultCalendar,
+        ));
+      }
+    } catch (e) {
+      emit(CalendarManagementError('Failed to update calendar: $e'));
+    }
+  }
+
+  // Helper method to update the color of all events associated with a calendar
+  Future<void> _updateEventsColorForCalendar(CalendarModel calendar) async {
+    try {
+      // Get all events for this calendar
+      final events = await _eventRepo.getEvents(calendarId: calendar.id);
+
+      // Update each event with the new calendar color
+      for (final event in events) {
+        final updatedEvent = event.copyWith(color: calendar.color);
+        await _eventRepo.updateEvent(updatedEvent);
+      }
+
+      print('Updated colors for ${events.length} events in calendar ${calendar.name}');
+    } catch (e) {
+      print('Error updating event colors: $e');
+      // Don't throw here, just log the error to not interrupt the calendar update
+    }
+  }
+
+  Future<void> _onDeleteCalendar(
+    DeleteCalendar event,
+    Emitter<CalendarManagementState> emit,
+  ) async {
+    try {
+      await _calendarRepo.deleteCalendar(event.calendarId);
+
+      final currentState = state;
+      if (currentState is CalendarManagementLoaded) {
+        final updatedCalendars = currentState.calendars.where((calendar) => calendar.id != event.calendarId).toList();
+
+        // Check if we deleted the default calendar
+        final isDefaultDeleted = currentState.defaultCalendar?.id == event.calendarId;
+        CalendarModel? newDefault;
+
+        if (isDefaultDeleted && updatedCalendars.isNotEmpty) {
+          // Make the first calendar the default
+          newDefault = updatedCalendars.first.copyWith(isDefault: true);
+          await _calendarRepo.updateCalendar(newDefault);
+
+          // Update the list with the new default
+          final finalCalendars = updatedCalendars.map((calendar) {
+            return calendar.id == newDefault!.id ? newDefault : calendar;
+          }).toList();
+
+          emit(CalendarManagementLoaded(
+            calendars: finalCalendars,
+            defaultCalendar: newDefault,
+          ));
+        } else {
+          emit(CalendarManagementLoaded(
+            calendars: updatedCalendars,
+            defaultCalendar: isDefaultDeleted ? null : currentState.defaultCalendar,
+          ));
+        }
+      }
+    } catch (e) {
+      emit(CalendarManagementError('Failed to delete calendar: $e'));
+    }
+  }
+
+  Future<void> _onSetDefaultCalendar(
+    SetDefaultCalendar event,
+    Emitter<CalendarManagementState> emit,
+  ) async {
+    final currentState = state;
+    if (currentState is CalendarManagementLoaded) {
+      try {
+        // Find the new default calendar
+        final newDefault = currentState.calendars.firstWhere(
+          (calendar) => calendar.id == event.calendarId,
+        );
+
+        // Update it to be the default
+        final updatedDefault = newDefault.copyWith(isDefault: true);
+        await _calendarRepo.updateCalendar(updatedDefault);
+
+        // Update any previous default calendar to not be default
+        for (final calendar in currentState.calendars) {
+          if (calendar.id != event.calendarId && calendar.isDefault) {
+            final updated = calendar.copyWith(isDefault: false);
+            await _calendarRepo.updateCalendar(updated);
+          }
+        }
+
+        // Reload calendars to get the updated list
+        add(const LoadCalendars());
+      } catch (e) {
+        emit(CalendarManagementError('Failed to set default calendar: $e'));
+      }
+    }
+  }
+
+  Future<void> _onSyncWebDAVCalendar(
+    SyncWebDAVCalendar event,
+    Emitter<CalendarManagementState> emit,
+  ) async {
+    emit(CalendarSyncing(event.calendar.id));
+
+    try {
+      // Fetch events from WebDAV
+      final events = await _webdavService.syncCalendar(event.calendar);
+
+      // Delete existing events for this calendar
+      await _deleteExistingCalendarEvents(event.calendar.id);
+
+      // Save the new events
+      for (final event in events) {
+        await _eventRepo.createEvent(event);
+      }
+
+      emit(CalendarSyncComplete(event.calendar.id, events.length));
+
+      // Reload the full state
+      add(const LoadCalendars());
+    } catch (e) {
+      emit(CalendarSyncError(event.calendar.id, 'Failed to sync WebDAV calendar: $e'));
+    }
+  }
+
+  Future<void> _onSyncDeviceCalendar(
+    SyncDeviceCalendar event,
+    Emitter<CalendarManagementState> emit,
+  ) async {
+    emit(CalendarSyncing(event.calendar.id));
+
+    try {
+      // Fetch events from device calendar
+      final events = await _deviceService.syncDeviceCalendar(event.calendar);
+
+      // Delete existing events for this calendar
+      await _deleteExistingCalendarEvents(event.calendar.id);
+
+      // Save the new events
+      for (final event in events) {
+        await _eventRepo.createEvent(event);
+      }
+
+      emit(CalendarSyncComplete(event.calendar.id, events.length));
+
+      // Reload the full state
+      add(const LoadCalendars());
+    } catch (e) {
+      emit(CalendarSyncError(event.calendar.id, 'Failed to sync device calendar: $e'));
+    }
+  }
+
+  Future<void> _onImportDeviceCalendars(
+    ImportDeviceCalendars event,
+    Emitter<CalendarManagementState> emit,
+  ) async {
+    try {
+      // Get device calendars
+      final deviceCalendars = await _deviceService.getDeviceCalendars();
+
+      // Emit state with device calendars for UI to display selection options
+      emit(DeviceCalendarsAvailable(deviceCalendars));
+    } catch (e) {
+      emit(CalendarManagementError('Failed to import device calendars: $e'));
+    }
+  }
+
+  // Helper method to delete existing events for a calendar
+  Future<void> _deleteExistingCalendarEvents(String calendarId) async {
+    // Get all events for this calendar
+    final events = await _eventRepo.getEvents();
+    final calendarEvents = events.where((e) => e.calendarId == calendarId).toList();
+
+    // Delete each event
+    for (final event in calendarEvents) {
+      await _eventRepo.deleteEvent(event.id);
+    }
+  }
+}

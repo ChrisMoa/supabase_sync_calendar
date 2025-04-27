@@ -11,9 +11,11 @@ class CalendarEventModel extends Equatable {
   final Color color;
   final String userId;
   final bool wholeDay;
-  final String calendarId;
+  final String calendarId; // Now references the calendar table
   final DateTime? reminder;
   final List<String> appendixes;
+  final bool
+      isExternalReadOnly; // Added to mark external sync events as read-only
 
   const CalendarEventModel({
     required this.id,
@@ -23,10 +25,11 @@ class CalendarEventModel extends Equatable {
     required this.end,
     required this.color,
     required this.userId,
+    required this.calendarId,
     this.wholeDay = false,
-    this.calendarId = 'default',
     this.reminder,
     this.appendixes = const [],
+    this.isExternalReadOnly = false,
   });
 
   CalendarEventModel copyWith({

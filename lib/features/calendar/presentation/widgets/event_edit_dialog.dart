@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_sync_calendar/core/models/calendar_model.dart';
 import 'package:supabase_sync_calendar/core/utils/time_utils.dart';
 
 class EventEditDialog extends StatefulWidget {
@@ -11,8 +12,8 @@ class EventEditDialog extends StatefulWidget {
   final bool? wholeDay;
   final String? calendarId;
   final DateTime? reminder;
-  final Function(String title, String description, DateTime start, DateTime end,
-      Color color, bool wholeDay, String calendarId, DateTime? reminder) onSave;
+  final List<CalendarModel> calendars;
+  final Function(String title, String description, DateTime start, DateTime end, Color color, bool wholeDay, String calendarId, DateTime? reminder) onSave;
 
   const EventEditDialog({
     super.key,
@@ -24,6 +25,7 @@ class EventEditDialog extends StatefulWidget {
     this.wholeDay,
     this.calendarId,
     this.reminder,
+    required this.calendars,
     required this.onSave,
   });
 
@@ -37,10 +39,11 @@ class _EventEditDialogState extends State<EventEditDialog> {
   late DateTime _startTime;
   late DateTime _endTime;
   late Color _color;
-  late bool _wholeDay;
-  late String _calendarId;
-  DateTime? _reminder;
+  bool _wholeDay = false;
+  int? _calendarId;
+  int? _reminder;
   final int _timeSnapInterval = 15; // Default to 15 minutes
+  bool _colorManuallyChanged = false;
 
   final List<Color> _availableColors = [
     Colors.blue,
@@ -51,25 +54,35 @@ class _EventEditDialogState extends State<EventEditDialog> {
     Colors.teal,
   ];
 
-  final List<String> _availableCalendars = [
-    'default',
-    'work',
-    'personal',
-    'family'
-  ]; // Placeholder for future implementation
+  final List<String> _availableCalendars = ['default', 'work', 'personal', 'family']; // Placeholder for future implementation
 
   @override
   void initState() {
     super.initState();
     _titleController = TextEditingController(text: widget.title ?? '');
-    _descriptionController =
-        TextEditingController(text: widget.description ?? '');
+    _descriptionController = TextEditingController(text: widget.description ?? '');
     _startTime = widget.startTime;
     _endTime = widget.endTime;
     _color = widget.color ?? Colors.blue;
     _wholeDay = widget.wholeDay ?? false;
-    _calendarId = widget.calendarId ?? 'default';
-    _reminder = widget.reminder;
+
+    // Initialize calendar ID with a valid value
+    if (widget.calendarId != null) {
+      _calendarId = int.tryParse(widget.calendarId!) ?? 1;
+    } else if (widget.calendars.isNotEmpty) {
+      // If no calendar ID provided but calendars exist, use the first calendar
+      _calendarId = int.tryParse(widget.calendars.first.id) ?? 1;
+
+      // Optionally update color based on the selected calendar if not manually set
+      if (widget.color == null) {
+        _color = widget.calendars.first.color;
+      }
+    } else {
+      // Fallback to default if no calendars available
+      _calendarId = 1; // Assuming 'default' is represented by 1
+    }
+
+    _reminder = widget.reminder?.millisecondsSinceEpoch;
   }
 
   @override
@@ -81,10 +94,11 @@ class _EventEditDialogState extends State<EventEditDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Validate the calendar ID at the start of the build method
+    _validateCalendarId();
+
     return AlertDialog(
-      title: Text(widget.title != null && widget.title != ''
-          ? 'Edit Event'
-          : 'New Event'),
+      title: Text(widget.title != null && widget.title != '' ? 'Edit Event' : 'New Event'),
       content: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -122,19 +136,33 @@ class _EventEditDialogState extends State<EventEditDialog> {
 
             // Calendar Dropdown
             DropdownButtonFormField<String>(
-              value: _calendarId,
+              value: _getValidCalendarId(),
               decoration: const InputDecoration(
                 labelText: 'Calendar',
               ),
-              items: _availableCalendars
-                  .map((cal) => DropdownMenuItem<String>(
-                        value: cal,
-                        child: Text(cal),
-                      ))
-                  .toList(),
+              items: _buildCalendarDropdownItems(),
               onChanged: (value) {
+                if (value == null) return;
+
                 setState(() {
-                  _calendarId = value ?? 'default';
+                  _calendarId = int.tryParse(value) ?? 1;
+
+                  if (!_colorManuallyChanged) {
+                    if (widget.calendars.isNotEmpty) {
+                      final selectedCalendar = widget.calendars.firstWhere(
+                        (cal) => cal.id == value,
+                        orElse: () => widget.calendars.first,
+                      );
+
+                      // Update color to match the calendar color
+                      _color = selectedCalendar.color;
+                      print('Updated event color to match calendar: ${_color.value.toRadixString(16)}');
+                    } else {
+                      _color = Colors.blue;
+                    }
+                  } else {
+                    print('Color not updated because it was manually changed');
+                  }
                 });
               },
             ),
@@ -151,8 +179,7 @@ class _EventEditDialogState extends State<EventEditDialog> {
                     // Ensure end time is after start time
                     if (_endTime.isBefore(_startTime)) {
                       // Keep the duration the same
-                      Duration duration =
-                          widget.endTime.difference(widget.startTime);
+                      Duration duration = widget.endTime.difference(widget.startTime);
                       _endTime = _startTime.add(duration);
                     }
                   });
@@ -168,8 +195,7 @@ class _EventEditDialogState extends State<EventEditDialog> {
                     // Ensure start time is before end time
                     if (_startTime.isAfter(_endTime)) {
                       // Keep the duration the same
-                      Duration duration =
-                          widget.endTime.difference(widget.startTime);
+                      Duration duration = widget.endTime.difference(widget.startTime);
                       _startTime = _endTime.subtract(duration);
                     }
                   });
@@ -234,8 +260,7 @@ class _EventEditDialogState extends State<EventEditDialog> {
                         )
                       : Row(
                           children: [
-                            Text(
-                                DateFormat('MMM d, h:mm a').format(_reminder!)),
+                            Text(DateFormat('MMM d, h:mm a').format(DateTime.fromMillisecondsSinceEpoch(_reminder!))),
                             IconButton(
                               icon: const Icon(Icons.clear),
                               onPressed: () {
@@ -263,6 +288,20 @@ class _EventEditDialogState extends State<EventEditDialog> {
         ElevatedButton(
           onPressed: () {
             if (_titleController.text.trim().isNotEmpty) {
+              // If color wasn't manually changed, ensure we're using the calendar's color
+              if (!_colorManuallyChanged && widget.calendars.isNotEmpty) {
+                try {
+                  final calendarIdStr = _calendarId?.toString() ?? '1';
+                  final selectedCalendar = widget.calendars.firstWhere(
+                    (cal) => cal.id == calendarIdStr,
+                    orElse: () => widget.calendars.first,
+                  );
+                  _color = selectedCalendar.color;
+                } catch (e) {
+                  print('Error setting color from calendar: $e');
+                }
+              }
+
               widget.onSave(
                 _titleController.text,
                 _descriptionController.text,
@@ -270,8 +309,8 @@ class _EventEditDialogState extends State<EventEditDialog> {
                 _endTime,
                 _color,
                 _wholeDay,
-                _calendarId,
-                _reminder,
+                _calendarId?.toString() ?? '1',
+                _reminder == null ? null : DateTime.fromMillisecondsSinceEpoch(_reminder!),
               );
               Navigator.of(context).pop();
             }
@@ -330,7 +369,7 @@ class _EventEditDialogState extends State<EventEditDialog> {
 
   Future<void> _pickReminderDateTime() async {
     final now = DateTime.now();
-    final initialDate = _reminder ?? now;
+    final initialDate = _reminder == null ? now : DateTime.fromMillisecondsSinceEpoch(_reminder!);
 
     final pickedDate = await showDatePicker(
       context: context,
@@ -347,13 +386,7 @@ class _EventEditDialogState extends State<EventEditDialog> {
 
       if (pickedTime != null) {
         setState(() {
-          _reminder = DateTime(
-            pickedDate.year,
-            pickedDate.month,
-            pickedDate.day,
-            pickedTime.hour,
-            pickedTime.minute,
-          );
+          _reminder = pickedDate.millisecondsSinceEpoch + pickedTime.hour * 3600000 + pickedTime.minute * 60000;
         });
       }
     }
@@ -367,8 +400,7 @@ class _EventEditDialogState extends State<EventEditDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('$label Time:',
-            style: const TextStyle(fontWeight: FontWeight.bold)),
+        Text('$label Time:', style: const TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
         // Date picker
         InkWell(
@@ -437,8 +469,7 @@ class _EventEditDialogState extends State<EventEditDialog> {
               );
 
               // Snap the time to the nearest interval (15 minutes)
-              newDateTime =
-                  TimeUtils.snapToInterval(newDateTime, _timeSnapInterval);
+              newDateTime = TimeUtils.snapToInterval(newDateTime, _timeSnapInterval);
               onChanged(newDateTime);
             }
           },
@@ -469,8 +500,7 @@ class _EventEditDialogState extends State<EventEditDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Event Color',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        const Text('Event Color', style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -480,6 +510,7 @@ class _EventEditDialogState extends State<EventEditDialog> {
               onTap: () {
                 setState(() {
                   _color = color;
+                  _colorManuallyChanged = true;
                 });
               },
               child: Container(
@@ -499,5 +530,84 @@ class _EventEditDialogState extends State<EventEditDialog> {
         ),
       ],
     );
+  }
+
+  String _getValidCalendarId() {
+    // Ensure the calendar ID is validated
+    _validateCalendarId();
+
+    if (widget.calendars.isEmpty) {
+      return '1'; // Default calendar ID
+    }
+
+    // Find if our current _calendarId exists in the calendars
+    bool exists = widget.calendars.any((cal) => cal.id == _calendarId.toString());
+    if (exists) {
+      return _calendarId.toString();
+    } else {
+      // If it doesn't exist, return the first calendar's ID
+      return widget.calendars.first.id;
+    }
+  }
+
+  List<DropdownMenuItem<String>> _buildCalendarDropdownItems() {
+    if (widget.calendars.isEmpty) {
+      return [
+        DropdownMenuItem<String>(
+          value: '1',
+          child: Row(
+            children: [
+              Container(
+                width: 12,
+                height: 12,
+                decoration: const BoxDecoration(
+                  color: Colors.blue,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Text('Default Calendar'),
+            ],
+          ),
+        )
+      ];
+    } else {
+      return widget.calendars
+          .map((cal) => DropdownMenuItem<String>(
+                value: cal.id,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: cal.color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(cal.name),
+                  ],
+                ),
+              ))
+          .toList();
+    }
+  }
+
+  void _validateCalendarId() {
+    // Implement the logic to validate the calendar ID
+    // This is a placeholder and should be replaced with the actual validation logic
+    if (widget.calendars.isNotEmpty) {
+      bool calendarIdValid = widget.calendars.any((cal) => cal.id == _calendarId.toString());
+      if (!calendarIdValid) {
+        _calendarId = int.tryParse(widget.calendars.first.id) ?? 1;
+        if (!_colorManuallyChanged) {
+          _color = widget.calendars.first.color;
+        }
+      }
+    } else {
+      // If no calendars, ensure we use 'default'
+      _calendarId = 1; // Assuming 'default' is represented by 1
+    }
   }
 }

@@ -25,6 +25,7 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
     on<CalendarDeleteEvent>(_onDeleteEvent);
     on<CalendarChangeView>(_onChangeView);
     on<CalendarSyncEvent>(_onSyncEvent);
+    on<CalendarFilterByCalendar>(_onFilterByCalendar);
   }
 
   void _onInitialize(
@@ -57,10 +58,10 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
     CalendarLoadEvents event,
     Emitter<CalendarState> emit,
   ) async {
+    print('CalendarBloc: Loading events...');
     emit(const CalendarLoading());
 
     try {
-      print('Loading calendar events...');
       if (_repository == null) {
         print('Calendar repository is null');
         emit(const CalendarError('Calendar not initialized'));
@@ -73,7 +74,16 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         return <CalendarEventModel>[];
       });
 
-      print('Loaded ${events.length} events');
+      print('CalendarBloc: Loaded ${events.length} events');
+
+      // Debug event data
+      if (events.isNotEmpty) {
+        final sampleEvent = events.first;
+        print(
+            'Sample event: title=${sampleEvent.title}, start=${sampleEvent.start}, end=${sampleEvent.end}, calendarId=${sampleEvent.calendarId}');
+      } else {
+        print('No events found');
+      }
 
       emit(CalendarLoaded(
         events: events,
@@ -271,6 +281,45 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
           calendarViewType: currentState.calendarViewType,
         ));
         break;
+    }
+  }
+
+  Future<void> _onFilterByCalendar(
+    CalendarFilterByCalendar event,
+    Emitter<CalendarState> emit,
+  ) async {
+    if (_repository == null) {
+      emit(const CalendarError('Calendar not initialized'));
+      return;
+    }
+
+    if (state is! CalendarLoaded) {
+      emit(const CalendarError('Calendar not loaded'));
+      return;
+    }
+
+    final currentState = state as CalendarLoaded;
+    emit(const CalendarLoading());
+
+    try {
+      // If calendarId is null, show all events
+      final events = event.calendarId == null
+          ? await _repository!.getEvents()
+          : await _repository!.getEvents(calendarId: event.calendarId);
+
+      emit(CalendarLoaded(
+        events: events,
+        calendarViewType: currentState.calendarViewType,
+        activeCalendarFilter: event.calendarId,
+      ));
+    } catch (e) {
+      print('Error filtering events: $e');
+      emit(CalendarError('Failed to filter events: $e'));
+
+      // Revert to previous state after delay
+      Future.delayed(const Duration(seconds: 3), () {
+        emit(currentState);
+      });
     }
   }
 
