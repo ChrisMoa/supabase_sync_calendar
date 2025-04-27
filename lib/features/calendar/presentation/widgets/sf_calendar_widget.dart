@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_sync_calendar/core/models/calendar_event_model.dart';
@@ -33,6 +35,9 @@ class SfCalendarWidget extends StatefulWidget {
   /// Callback when the calendar view changes
   final Function(CalendarView)? onViewChanged;
 
+  /// Callback when creating a series from an event
+  final Function(CalendarEventModel)? onMakeSeries;
+
   /// Start hour of the day view (default: 7)
   final double startHour;
 
@@ -51,6 +56,7 @@ class SfCalendarWidget extends StatefulWidget {
     this.onEventUpdate,
     this.onEventDelete,
     this.onViewChanged,
+    this.onMakeSeries,
     this.startHour = 7,
     this.endHour = 20,
     this.timeIntervalHeight = 50,
@@ -149,10 +155,12 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
   }
 
   _AppointmentDataSource _getCalendarDataSource() {
-    print('SfCalendarWidget: Converting ${widget.events.length} events to appointments');
+    print(
+        'SfCalendarWidget: Converting ${widget.events.length} events to appointments');
 
     List<Appointment> appointments = widget.events.map((event) {
-      print('Processing event: ${event.id}, ${event.title}, ${event.start}-${event.end}');
+      print(
+          'Processing event: ${event.id}, ${event.title}, ${event.start}-${event.end}');
       return Appointment(
         id: event.id,
         subject: event.title,
@@ -177,9 +185,12 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
     // Remove any existing overlay first
     _removeOverlay();
 
-    if (details.targetElement == CalendarElement.appointment && details.appointments != null && details.appointments!.isNotEmpty) {
+    if (details.targetElement == CalendarElement.appointment &&
+        details.appointments != null &&
+        details.appointments!.isNotEmpty) {
       final appointment = details.appointments!.first as Appointment;
-      final String eventId = appointment.id.toString(); // Fix: Use toString() to safely get ID
+      final String eventId =
+          appointment.id.toString(); // Fix: Use toString() to safely get ID
 
       // Find the event
       final event = widget.events.firstWhere(
@@ -191,10 +202,12 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _showEventInfo(event, details);
       });
-    } else if (details.targetElement == CalendarElement.calendarCell && details.date != null) {
+    } else if (details.targetElement == CalendarElement.calendarCell &&
+        details.date != null) {
       // Create new event when clicking on empty cell
       final snappedTime = _snapTimeToInterval(details.date!);
-      final endTime = snappedTime.add(Duration(minutes: widget.timeSnapInterval));
+      final endTime =
+          snappedTime.add(Duration(minutes: widget.timeSnapInterval));
 
       _showAddEventDialog(snappedTime, endTime);
     }
@@ -214,8 +227,11 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
       // For appointments, use either details.position or a reasonable default
       if (details.date != null) {
         // Try to calculate position based on the date/time
-        final timeAxisHeight = calendarSize.height / (widget.endHour - widget.startHour);
-        final hourOffset = details.date!.hour - widget.startHour.toInt() + (details.date!.minute / 60.0);
+        final timeAxisHeight =
+            calendarSize.height / (widget.endHour - widget.startHour);
+        final hourOffset = details.date!.hour -
+            widget.startHour.toInt() +
+            (details.date!.minute / 60.0);
 
         position = Offset(
           calendarPosition.dx + 20,
@@ -267,6 +283,7 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
         onDuplicate: _handleEventDuplicate,
         onDelete: _handleEventDelete,
         onDurationChange: widget.onEventUpdate,
+        onMakeSeries: widget.onMakeSeries, // Pass the callback from widget
       ),
     );
 
@@ -283,42 +300,19 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
     }
   }
 
-  void _handleEventDelete(CalendarEventModel event) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Event'),
-        content: Text('Are you sure you want to delete "${event.title}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(context).pop();
-              if (widget.onEventDelete != null) {
-                widget.onEventDelete!(event.id);
-              }
-            },
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showAddEventDialog(DateTime startTime, DateTime endTime) {
     // Get available calendars from CalendarManagementBloc
-    final calendarManagementBloc = BlocProvider.of<CalendarManagementBloc>(context, listen: false);
+    final calendarManagementBloc =
+        BlocProvider.of<CalendarManagementBloc>(context, listen: false);
     final calendarManagementState = calendarManagementBloc.state;
     List<CalendarModel> availableCalendars = [];
     CalendarModel? defaultCalendar;
 
     if (calendarManagementState is CalendarManagementLoaded) {
       // Filter out invalid calendars to avoid any issues
-      availableCalendars = calendarManagementState.calendars.where((cal) => cal.id.isNotEmpty).toList();
+      availableCalendars = calendarManagementState.calendars
+          .where((cal) => cal.id.isNotEmpty)
+          .toList();
       defaultCalendar = calendarManagementState.defaultCalendar;
 
       // Debug output
@@ -327,7 +321,8 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
         print('Calendar: ${cal.id}, ${cal.name}, ${cal.color}');
       }
     } else {
-      print('CalendarManagementState is not loaded: ${calendarManagementState.runtimeType}');
+      print(
+          'CalendarManagementState is not loaded: ${calendarManagementState.runtimeType}');
     }
 
     // Fallback if no calendars available
@@ -354,7 +349,8 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
         endTime: endTime,
         calendarId: defaultCalendar?.id ?? availableCalendars.first.id,
         color: defaultCalendar?.color ?? availableCalendars.first.color,
-        onSave: (title, description, start, end, color, wholeDay, calendarId, reminder) {
+        onSave: (title, description, start, end, color, wholeDay, calendarId,
+            reminder) {
           final newEvent = CalendarEventModel(
             id: _uuid.v4(),
             title: title,
@@ -380,13 +376,16 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
 
   void _showEditEventDialog(CalendarEventModel event) {
     // Get available calendars from CalendarManagementBloc
-    final calendarManagementBloc = BlocProvider.of<CalendarManagementBloc>(context, listen: false);
+    final calendarManagementBloc =
+        BlocProvider.of<CalendarManagementBloc>(context, listen: false);
     final calendarManagementState = calendarManagementBloc.state;
     List<CalendarModel> availableCalendars = [];
 
     if (calendarManagementState is CalendarManagementLoaded) {
       // Filter out invalid calendars
-      availableCalendars = calendarManagementState.calendars.where((cal) => cal.id.isNotEmpty).toList();
+      availableCalendars = calendarManagementState.calendars
+          .where((cal) => cal.id.isNotEmpty)
+          .toList();
 
       // Debug output
       print('Edit dialog: Found ${availableCalendars.length} calendars');
@@ -394,11 +393,13 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
         print('Calendar: ${cal.id}, ${cal.name}, ${cal.color}');
       }
     } else {
-      print('Edit dialog: CalendarManagementState is not loaded: ${calendarManagementState.runtimeType}');
+      print(
+          'Edit dialog: CalendarManagementState is not loaded: ${calendarManagementState.runtimeType}');
     }
 
     // Ensure the event's calendar is in the list, or add it if missing
-    bool eventCalendarExists = availableCalendars.any((cal) => cal.id == event.calendarId);
+    bool eventCalendarExists =
+        availableCalendars.any((cal) => cal.id == event.calendarId);
 
     if (!eventCalendarExists && event.calendarId.isNotEmpty) {
       // Add the event's calendar as a temporary item to avoid dropdown errors
@@ -439,7 +440,8 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
         wholeDay: event.wholeDay,
         calendarId: event.calendarId,
         reminder: event.reminder,
-        onSave: (title, description, start, end, color, wholeDay, calendarId, reminder) {
+        onSave: (title, description, start, end, color, wholeDay, calendarId,
+            reminder) {
           final updatedEvent = event.copyWith(
             title: title,
             description: description,
@@ -463,12 +465,14 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
   void _handleCalendarLongPress(CalendarLongPressDetails details) {
     _removeOverlay();
 
-    if (details.targetElement == CalendarElement.calendarCell && details.date != null) {
+    if (details.targetElement == CalendarElement.calendarCell &&
+        details.date != null) {
       final DateTime date = details.date!;
 
       // Snap the time to the nearest interval
       final DateTime snappedTime = _snapTimeToInterval(date);
-      final DateTime endTime = snappedTime.add(Duration(minutes: widget.timeSnapInterval));
+      final DateTime endTime =
+          snappedTime.add(Duration(minutes: widget.timeSnapInterval));
 
       _showAddEventDialog(snappedTime, endTime);
     }
@@ -558,6 +562,95 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
     // Update the calendar view if it changed
     if (oldWidget.calendarView != widget.calendarView) {
       _calendarController.view = widget.calendarView;
+    }
+  }
+
+  void _handleEventDelete(CalendarEventModel event) {
+    // Special handling for series events
+    if (event.seriesId != null) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Delete Event'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Delete "${event.title}"?'),
+              const SizedBox(height: 16),
+              const Text('This event is part of a series. Do you want to:'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                if (widget.onEventDelete != null) {
+                  widget.onEventDelete!(event.id);
+                }
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.orange),
+              child: const Text('Delete This Event Only'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                // Special handling to delete all events in series
+                _handleDeleteSeriesEvents(event);
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete Entire Series'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // Regular event deletion
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Delete Event'),
+          content: Text('Are you sure you want to delete "${event.title}"?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                if (widget.onEventDelete != null) {
+                  widget.onEventDelete!(event.id);
+                }
+              },
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      );
+    }
+  }
+
+  void _handleDeleteSeriesEvents(CalendarEventModel event) {
+    // This would be handled by your series management bloc
+    // For now, we'll use a simple approach of finding and deleting all events with the same seriesId
+
+    if (event.seriesId != null &&
+        widget.events.isNotEmpty &&
+        widget.onEventDelete != null) {
+      // Get all events in the same series
+      final seriesEvents =
+          widget.events.where((e) => e.seriesId == event.seriesId).toList();
+
+      // Delete each event in the series
+      for (final seriesEvent in seriesEvents) {
+        widget.onEventDelete!(seriesEvent.id);
+      }
     }
   }
 }
