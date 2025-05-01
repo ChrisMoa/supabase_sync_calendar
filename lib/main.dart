@@ -17,13 +17,18 @@ void main() async {
   // Initialize secure storage for credentials
   const secureStorage = FlutterSecureStorage();
 
-  runApp(MyApp(secureStorage: secureStorage));
+  runApp(MyApp(
+    secureStorage: secureStorage,
+  ));
 }
 
 class MyApp extends StatelessWidget {
   final FlutterSecureStorage secureStorage;
 
-  const MyApp({super.key, required this.secureStorage});
+  const MyApp({
+    super.key,
+    required this.secureStorage,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -79,7 +84,12 @@ class MyApp extends StatelessWidget {
               colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
               useMaterial3: true,
             ),
-            home: const LoginPage(),
+            home: state is AuthAuthenticated
+                ? CalendarDashboardPage(
+                    supabaseClient: state.supabaseClient,
+                    user: state.user,
+                  )
+                : const LoginPage(),
             routes: {
               '/login': (context) => const LoginPage(),
             },
@@ -91,8 +101,7 @@ class MyApp extends StatelessWidget {
               if (settings.name == '/calendar_dashboard') {
                 if (state is AuthAuthenticated) {
                   final authState = state;
-                  print(
-                      'Creating route for calendar dashboard with user ${authState.user.id}');
+                  print('Creating route for calendar dashboard with user ${authState.user.id}');
                   return MaterialPageRoute(
                     builder: (context) => CalendarDashboardPage(
                       supabaseClient: authState.supabaseClient,

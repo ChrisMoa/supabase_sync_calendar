@@ -1,6 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_sharing_intent/model/sharing_file.dart';
 import 'package:icalendar_parser/icalendar_parser.dart';
 import 'package:supabase_sync_calendar/core/models/calendar_event_model.dart';
 import 'package:supabase_sync_calendar/core/models/calendar_model.dart';
@@ -9,6 +12,7 @@ import 'package:uuid/uuid.dart';
 
 class ICSImportService {
   final Uuid _uuid = const Uuid();
+  static const _methodChannel = MethodChannel('com.example.supabase_sync_calendar/file_handler');
 
   // Import events from an ICS file string content
   Future<List<CalendarEventModel>> importFromString(
@@ -63,26 +67,10 @@ class ICSImportService {
       DateTime? end;
       bool isAllDay = false;
 
-      if (event['dtstart'] != null) {
-        if (event['dtstart'] is DateTime) {
-          start = event['dtstart'] as DateTime;
-        } else if (event['dtstart'] is IcsDateTime) {
-          final ev = event['dtstart'] as IcsDateTime;
-          start = DateTime.tryParse(ev.dt);
-        }
-      }
-
-      if (event['dtend'] != null) {
-        if (event['dtend'] is DateTime) {
-          end = event['dtend'] as DateTime;
-        } else if (event['dtend'] is IcsDateTime) {
-          final ev = event['dtend'] as IcsDateTime;
-          end = DateTime.tryParse(ev.dt);
-        }
-      }
-
-      // Skip events with missing required data
-      if (start == null || end == null) continue;
+      final startIcs = event['dtstart'] as IcsDateTime?;
+      final endIcs = event['dtend'] as IcsDateTime?;
+      start = startIcs?.toDateTime() ?? DateTime.now();
+      end = endIcs?.toDateTime() ?? start.add(const Duration(hours: 1));
       isAllDay = EventChecker.isCompleteDay(start, end);
 
       events.add(CalendarEventModel(
@@ -101,5 +89,97 @@ class ICSImportService {
     }
 
     return events;
+  }
+
+  Future<List<CalendarEventModel>> processOpenedFiles(List<SharedFile> sharedFiles, CalendarModel defaultCalendar) async {
+    try {
+      final List<CalendarEventModel> events = [];
+
+      for (var sharedFile in sharedFiles) {
+        final String? fileValue = sharedFile.value;
+        if (fileValue == null) {
+          print('Warning: File value is null, skipping...');
+          continue;
+        }
+
+        print('Processing file: $fileValue with type: ${sharedFile.type}');
+
+        try {
+          String content;
+          if (fileValue.startsWith('content://')) {
+            print('Reading content URI: $fileValue');
+            try {
+              content = await _methodChannel.invokeMethod('readContentUri', {'uri': fileValue});
+              print('Successfully read content from URI');
+            } catch (e) {
+              print('Error reading content URI: $e');
+              rethrow;
+            }
+          } else {
+            print('Reading file path: $fileValue');
+            content = await File(fileValue).readAsString();
+          }
+
+          print('Parsing ICS content...');
+          final ICalendar calendar = ICalendar.fromString(content);
+          print('Successfully parsed ICS content');
+
+          print('Converting events...');
+          for (var event in calendar.data) {
+            final type = event['type'] as String?;
+            print('Processing component of type: $type');
+
+            if (type == 'VEVENT') {
+              final summary = event['summary'] as String?;
+              print('Processing event: $summary');
+
+              // Parse dates with fallback to current time
+              DateTime start;
+              DateTime end;
+              try {
+                final startIcs = event['dtstart'] as IcsDateTime?;
+                final endIcs = event['dtend'] as IcsDateTime?;
+
+                start = startIcs?.toDateTime() ?? DateTime.now();
+                end = endIcs?.toDateTime() ?? start.add(const Duration(hours: 1));
+
+                print('Parsed dates - Start: $start, End: $end');
+              } catch (e) {
+                print('Error parsing dates: $e');
+                start = DateTime.now();
+                end = start.add(const Duration(hours: 1));
+              }
+
+              events.add(CalendarEventModel(
+                id: _uuid.v4(),
+                title: summary ?? 'Untitled Event',
+                description: event['description'] as String? ?? '',
+                color: defaultCalendar.color.withAlpha(255),
+                userId: defaultCalendar.userId,
+                calendarId: defaultCalendar.id,
+                start: start,
+                end: end,
+              ));
+            }
+          }
+          print('Successfully processed ${events.length} events from file');
+        } catch (e, stackTrace) {
+          print('Error parsing ICS file: $e');
+          print('Stack trace: $stackTrace');
+          // Continue with other files if one fails
+          continue;
+        }
+      }
+
+      if (events.isEmpty && sharedFiles.isNotEmpty) {
+        throw Exception("No valid calendar events could be extracted from the shared files.");
+      }
+
+      return events;
+    } catch (e, stackTrace) {
+      print('Error processing shared files: $e');
+      print('Stack trace: $stackTrace');
+      rethrow;
+    }
   }
 }
