@@ -327,19 +327,7 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
 
     // Fallback if no calendars available
     if (availableCalendars.isEmpty) {
-      // Create a default calendar for display purposes
-      availableCalendars = [
-        CalendarModel(
-          id: 'default',
-          name: 'Default Calendar',
-          color: Colors.blue,
-          userId: '',
-          type: CalendarType.local,
-          isDefault: true,
-        )
-      ];
-      defaultCalendar = availableCalendars.first;
-      print('Using fallback default calendar');
+      throw "unhandled case in the event_edit_dialog::_showAddEventDialog()";
     }
 
     showDialog(
@@ -357,7 +345,8 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
             description: description,
             start: start,
             end: end,
-            color: color,
+            color: defaultCalendar?.color.withAlpha(255) ??
+                Color.fromARGB(255, 255, 0, 0),
             userId: '', // This will be set in the bloc
             wholeDay: wholeDay,
             calendarId: calendarId,
@@ -417,16 +406,7 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
 
     // Fallback if no calendars available
     if (availableCalendars.isEmpty) {
-      availableCalendars = [
-        CalendarModel(
-          id: 'default',
-          name: 'Default Calendar',
-          color: Colors.blue,
-          userId: '',
-          type: CalendarType.local,
-          isDefault: true,
-        )
-      ];
+      throw "unhandled case in the sf_calendar_widget::_showEditEventDialog";
     }
 
     showDialog(
