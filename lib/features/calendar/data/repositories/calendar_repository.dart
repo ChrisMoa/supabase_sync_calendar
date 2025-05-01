@@ -37,77 +37,26 @@ class CalendarRepository {
 
   Future<List<CalendarEventModel>> getEvents({String? calendarId, bool fetchFromSupabaseIfEmpty = false}) async {
     try {
-      // Get events from local database first
+      // First try to get events from local Hive storage
       debugPrint('📋 LOCAL DB: Attempting to load events from Hive local storage');
-      List<CalendarEventModel> events;
-
-      // First get all events to check calendar IDs
       List<CalendarEventModel> allEvents = HiveService.getAllEvents();
-      debugPrint('📋 HIVE: getAllEvents() - Found ${allEvents.length} events in box');
-
-      // Print unique calendar IDs for debugging
-      _printUniqueCalendarIds(allEvents);
-
-      // Check if there are any events with the requested calendar ID
-      bool hasEventsWithRequestedCalendar = false;
-      if (calendarId != null) {
-        hasEventsWithRequestedCalendar = allEvents.any((e) => e.calendarId == calendarId);
-        debugPrint('📋 CALENDAR CHECK: Has events with requested calendarId=$calendarId: $hasEventsWithRequestedCalendar');
-      }
-
-      if (calendarId != null && hasEventsWithRequestedCalendar) {
-        // If there are events with this calendar ID, filter for them
-        debugPrint('📋 LOCAL DB: Getting events for specific calendar: $calendarId');
-        events = HiveService.getEventsByCalendar(calendarId);
-      } else if (calendarId != null && !hasEventsWithRequestedCalendar && !fetchFromSupabaseIfEmpty) {
-        // In offline mode, if the selected calendar has no events, try to be smart and return events from the most common calendar
-        debugPrint('📋 LOCAL DB: No events found for calendar $calendarId, using all events instead');
-
-        // Count events by calendar
-        Map<String, int> calendarCounts = {};
-        for (final event in allEvents) {
-          calendarCounts[event.calendarId] = (calendarCounts[event.calendarId] ?? 0) + 1;
-        }
-
-        // Find most common calendar ID
-        String? mostCommonCalendarId;
-        int maxCount = 0;
-        calendarCounts.forEach((calId, count) {
-          if (count > maxCount) {
-            maxCount = count;
-            mostCommonCalendarId = calId;
-          }
-        });
-
-        if (mostCommonCalendarId != null) {
-          debugPrint('📋 SMART FALLBACK: Using most common calendar ID: $mostCommonCalendarId with $maxCount events');
-          events = HiveService.getEventsByCalendar(mostCommonCalendarId!);
-        } else {
-          // Fallback to all events
-          debugPrint('📋 LOCAL DB: Getting all events from all calendars');
-          events = allEvents;
-        }
-      } else {
-        // Get all events
-        debugPrint('📋 LOCAL DB: Getting all events from all calendars');
-        events = allEvents;
-      }
-
-      debugPrint('📋 LOCAL DB: Found ${events.length} events in local storage (before user filtering)');
+      debugPrint('📋 LOCAL DB: Found ${allEvents.length} events in local storage (before user filtering)');
 
       // Filter for this user's events
-      events = events.where((e) => e.userId == userId).toList();
-      debugPrint('📋 LOCAL DB: Found ${events.length} events for user $userId in local storage');
+      allEvents = allEvents.where((e) => e.userId == userId).toList();
+      debugPrint('📋 LOCAL DB: Found ${allEvents.length} events for user $userId in local storage');
 
-      // More detailed debug of the events after filtering
-      if (events.isNotEmpty) {
-        debugPrint('📋 SAMPLE EVENT DATA: First event calendarId: ${events[0].calendarId}');
-      }
+      List<CalendarEventModel> events;
 
-      if (calendarId != null) {
-        debugPrint('📋 CALENDAR FILTER CHECK: Looking for events with calendarId=$calendarId');
-        final matchingEvents = events.where((e) => e.calendarId == calendarId).toList();
-        debugPrint('📋 CALENDAR FILTER CHECK: Found ${matchingEvents.length} events matching the calendarId filter');
+      if (calendarId == null) {
+        // If no calendar ID is provided, return all events
+        debugPrint('📋 LOCAL DB: Getting all events from all calendars');
+        events = allEvents;
+      } else {
+        // If a calendar ID is provided, filter for that calendar
+        debugPrint('📋 LOCAL DB: Getting events for specific calendar: $calendarId');
+        events = allEvents.where((e) => e.calendarId == calendarId).toList();
+        debugPrint('📋 LOCAL DB: Found ${events.length} events for calendar $calendarId');
       }
 
       // If no events found locally and fetchFromSupabaseIfEmpty is true and NOT in offline mode, try fetching from Supabase
@@ -122,23 +71,27 @@ class CalendarRepository {
             response.where((item) => item[SupabaseUtils.colCalendarId] == calendarId);
           }
 
-          final supabaseEvents = (response as List).map((json) => CalendarEventModel.fromJson(json)).toList();
-          debugPrint('🌐 SUPABASE: Converted ${supabaseEvents.length} events from JSON');
+          events = (response as List).map((json) => CalendarEventModel.fromJson(json)).toList();
+          debugPrint('🌐 SUPABASE: Converted ${events.length} events from JSON');
 
           // Store events in Hive for offline access
-          debugPrint('📋 LOCAL DB: Saving ${supabaseEvents.length} events to local storage');
-          for (final event in supabaseEvents) {
+          debugPrint('📋 LOCAL DB: Saving ${events.length} events to local storage');
+          for (final event in events) {
             await HiveService.saveEvent(event);
           }
 
-          debugPrint('🌐 SUPABASE: Fetched ${supabaseEvents.length} events from Supabase');
-          return supabaseEvents;
+          debugPrint('🌐 SUPABASE: Fetched ${events.length} events from Supabase');
         } catch (e) {
-          debugPrint('❌ ERROR: Error fetching events from Supabase: $e');
-          // If there's an error fetching from Supabase, return the empty local list
+          debugPrint('❌ ERROR: Failed to fetch events from Supabase: $e');
+          if (e.toString().contains('does not exist')) {
+            // Table doesn't exist yet, return empty list
+            return [];
+          }
+          // For other errors, rethrow to be handled by caller
+          rethrow;
         }
       } else if (events.isEmpty && isOfflineMode) {
-        debugPrint('🔌 OFFLINE: No events found in local storage, and in offline mode so can\'t fetch from Supabase');
+        debugPrint('🔌 OFFLINE: No events found in local storage. Cannot fetch from Supabase in offline mode.');
       } else if (events.isEmpty) {
         debugPrint('ℹ️ INFO: No events found in local storage for user $userId. Skipping Supabase fetch as per configuration.');
       } else {
@@ -147,7 +100,7 @@ class CalendarRepository {
 
       return events;
     } catch (e) {
-      debugPrint('Error fetching events: $e');
+      debugPrint('Failed to load events: $e');
       throw Exception('Failed to load events: $e');
     }
   }
@@ -155,42 +108,30 @@ class CalendarRepository {
   // Create a new event
   Future<CalendarEventModel> createEvent(CalendarEventModel event) async {
     try {
-      debugPrint('Creating new event with title: ${event.title}');
-      final eventId = _uuid.v4();
+      final eventId = event.id.isEmpty ? _uuid.v4() : event.id;
       final newEvent = event.copyWith(id: eventId, userId: userId);
 
-      // Always save to Hive storage for offline access
+      // Save to Hive for local storage
       await HiveService.saveEvent(newEvent);
 
-      // Only save to Supabase if not in offline mode
+      // Only try to save to Supabase if not in offline mode
       if (!isOfflineMode) {
         try {
-          // Attempt to create the table if it doesn't exist
-          debugPrint('Checking/creating calendar_events table');
-          await supabaseClient.rpc('ensure_calendar_events_table').catchError((e) {
-            debugPrint('Could not create table via RPC: $e');
-            // This is expected if the RPC doesn't exist, just continue
-          });
-
-          // Insert the event data
-          debugPrint('Inserting event with ID: ${newEvent.id}');
-          final result = await supabaseClient.from(SupabaseUtils.eventsTable).insert(newEvent.toJson()).select();
-          debugPrint('Event created successfully in Supabase');
+          // Try to save to Supabase if online
+          await supabaseClient.from(SupabaseUtils.eventsTable).insert(newEvent.toJson());
+          debugPrint('🌐 SUPABASE: Event saved to Supabase');
         } catch (e) {
-          // If we get a specific error about table not existing
-          if (e.toString().contains('does not exist')) {
-            debugPrint('Table does not exist - need to create it first');
-            throw Exception('Table does not exist. Please set up the calendar_events table in Supabase first.');
-          }
-          debugPrint('Error saving to Supabase (will continue with local save): $e');
+          // If saving to Supabase fails, the event is still in Hive
+          // and will be synced later by the SyncService
+          debugPrint('⚠️ WARNING: Event saved locally but not to Supabase: $e');
         }
       } else {
-        debugPrint('🔌 OFFLINE: Event created in local storage only');
+        debugPrint('🔌 OFFLINE: Event saved to local storage only');
       }
 
       return newEvent;
     } catch (e) {
-      debugPrint('Error creating event: $e');
+      debugPrint('Failed to create event: $e');
       throw Exception('Failed to create event: $e');
     }
   }
@@ -198,19 +139,27 @@ class CalendarRepository {
   // Update an existing event
   Future<CalendarEventModel> updateEvent(CalendarEventModel event) async {
     try {
-      // Always update in Hive storage
+      // Update in Hive for local storage
       await HiveService.saveEvent(event);
 
-      // Only update in Supabase if not in offline mode
+      // Only try to update in Supabase if not in offline mode
       if (!isOfflineMode) {
-        await supabaseClient.from(SupabaseUtils.eventsTable).update(event.toJson()).eq(SupabaseUtils.colId, event.id).eq(SupabaseUtils.colUserId, userId);
-        debugPrint('Event updated successfully in Supabase');
+        try {
+          // Try to update in Supabase if online
+          await supabaseClient.from(SupabaseUtils.eventsTable).update(event.toJson()).eq(SupabaseUtils.colId, event.id);
+          debugPrint('🌐 SUPABASE: Event updated in Supabase');
+        } catch (e) {
+          // If updating in Supabase fails, the event is still updated in Hive
+          // and will be synced later by the SyncService
+          debugPrint('⚠️ WARNING: Event updated locally but not in Supabase: $e');
+        }
       } else {
         debugPrint('🔌 OFFLINE: Event updated in local storage only');
       }
 
       return event;
     } catch (e) {
+      debugPrint('Failed to update event: $e');
       throw Exception('Failed to update event: $e');
     }
   }
@@ -218,17 +167,25 @@ class CalendarRepository {
   // Delete an event
   Future<void> deleteEvent(String eventId) async {
     try {
-      // Always delete from Hive storage
+      // Delete from Hive for local storage
       await HiveService.deleteEvent(eventId);
 
-      // Only delete from Supabase if not in offline mode
+      // Only try to delete from Supabase if not in offline mode
       if (!isOfflineMode) {
-        await supabaseClient.from(SupabaseUtils.eventsTable).delete().eq(SupabaseUtils.colId, eventId).eq(SupabaseUtils.colUserId, userId);
-        debugPrint('Event deleted successfully from Supabase');
+        try {
+          // Try to delete from Supabase if online
+          await supabaseClient.from(SupabaseUtils.eventsTable).delete().eq(SupabaseUtils.colId, eventId);
+          debugPrint('🌐 SUPABASE: Event deleted from Supabase');
+        } catch (e) {
+          // If deleting from Supabase fails, it's still deleted from Hive
+          // and will be synced later by the SyncService
+          debugPrint('⚠️ WARNING: Event deleted locally but not from Supabase: $e');
+        }
       } else {
         debugPrint('🔌 OFFLINE: Event deleted from local storage only');
       }
     } catch (e) {
+      debugPrint('Failed to delete event: $e');
       throw Exception('Failed to delete event: $e');
     }
   }
