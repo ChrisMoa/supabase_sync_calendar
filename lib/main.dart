@@ -27,13 +27,15 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final calendarBloc = CalendarBloc();
+
     return MultiBlocProvider(
       providers: [
         BlocProvider<CustomAuthBloc>(
           create: (context) => CustomAuthBloc(secureStorage),
         ),
         BlocProvider<CalendarBloc>(
-          create: (context) => CalendarBloc(),
+          create: (context) => calendarBloc,
         ),
         BlocProvider<EventSeriesBloc>(
           create: (context) {
@@ -58,6 +60,7 @@ class MyApp extends StatelessWidget {
               return CalendarManagementBloc(
                 supabaseClient: authState.supabaseClient,
                 userId: authState.user.id,
+                calendarBloc: calendarBloc,
               );
             }
             // Return a placeholder that will be replaced when authenticated

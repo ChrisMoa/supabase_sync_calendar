@@ -2,6 +2,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:supabase_sync_calendar/core/models/calendar_model.dart';
 import 'package:supabase_sync_calendar/core/services/ics_import_service.dart';
+import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_bloc/calendar_bloc.dart';
+import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_bloc/calendar_event.dart';
 
 import '../../../data/repositories/calendar_management_repository.dart';
 import '../../../data/repositories/calendar_repository.dart';
@@ -17,10 +19,12 @@ class CalendarManagementBloc
   final WebDAVCalendarService _webdavService = WebDAVCalendarService();
   final DeviceCalendarService _deviceService = DeviceCalendarService();
   final ICSImportService _icsImportService = ICSImportService();
+  final CalendarBloc? calendarBloc;
 
   CalendarManagementBloc({
     required SupabaseClient supabaseClient,
     required String userId,
+    this.calendarBloc,
   })  : _calendarRepo = CalendarManagementRepository(
           supabaseClient: supabaseClient,
           userId: userId,
@@ -162,7 +166,9 @@ class CalendarManagementBloc
       // Update each event with the new calendar color
       for (final event in events) {
         final updatedEvent = event.copyWith(color: calendar.color);
-        await _eventRepo.updateEvent(updatedEvent);
+        if (calendarBloc != null) {
+          calendarBloc!.add(CalendarUpdateEvent(updatedEvent));
+        }
       }
 
       print(
