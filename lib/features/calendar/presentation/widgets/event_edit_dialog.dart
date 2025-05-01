@@ -153,12 +153,12 @@ class _EventEditDialogState extends State<EventEditDialog> {
 
                       // Update color to match the calendar color
                       _color = selectedCalendar.color;
-                      print('Updated event color to match calendar: ${_color.value.toRadixString(16)}');
+                      debugPrint('Updated event color to match calendar: ${_color.value.toRadixString(16)}');
                     } else {
                       _color = Colors.blue;
                     }
                   } else {
-                    print('Color not updated because it was manually changed');
+                    debugPrint('Color not updated because it was manually changed');
                   }
                 });
               },
@@ -298,7 +298,7 @@ class _EventEditDialogState extends State<EventEditDialog> {
                   );
                   _color = selectedCalendar.color;
                 } catch (e) {
-                  print('Error setting color from calendar: $e');
+                  debugPrint('Error setting color from calendar: $e');
                 }
               }
 

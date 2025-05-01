@@ -105,13 +105,13 @@ class MyApp extends StatelessWidget {
             },
             // Generate routes dynamically based on the current auth state
             onGenerateRoute: (settings) {
-              print('Generating route for: ${settings.name}');
+              debugPrint('Generating route for: ${settings.name}');
 
               // Handle dynamic routes for authenticated pages
               if (settings.name == '/calendar_dashboard') {
                 if (state is AuthAuthenticated) {
                   final authState = state;
-                  print('Creating route for calendar dashboard with user ${authState.user.id}');
+                  debugPrint('Creating route for calendar dashboard with user ${authState.user.id}');
                   return MaterialPageRoute(
                     builder: (context) => CalendarDashboardPage(
                       supabaseClient: authState.supabaseClient,
@@ -120,7 +120,7 @@ class MyApp extends StatelessWidget {
                   );
                 } else {
                   // If not authenticated, redirect to login
-                  print('Not authenticated, redirecting to login');
+                  debugPrint('Not authenticated, redirecting to login');
                   return MaterialPageRoute(
                     builder: (context) => const LoginPage(),
                   );

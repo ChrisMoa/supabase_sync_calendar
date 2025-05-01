@@ -109,7 +109,7 @@ class CalendarModel extends Equatable {
       colorValue = json['colorValue'] as int? ?? json['color'] as int? ?? defaultColorValue;
     } catch (e) {
       // Handle the case where colorValue can't be cast to int
-      print('Error parsing colorValue: $e, using default');
+      debugPrint('Error parsing colorValue: $e, using default');
       colorValue = defaultColorValue;
     }
 
@@ -119,7 +119,7 @@ class CalendarModel extends Equatable {
       final typeIndex = json['type'] as int? ?? 0;
       calendarType = CalendarType.values[typeIndex];
     } catch (e) {
-      print('Error parsing calendar type: $e, using default');
+      debugPrint('Error parsing calendar type: $e, using default');
       calendarType = CalendarType.local;
     }
 

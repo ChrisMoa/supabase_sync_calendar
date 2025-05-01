@@ -32,7 +32,7 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
     CalendarInitialize event,
     Emitter<CalendarState> emit,
   ) {
-    print('Initializing calendar with user ID: ${event.userId}');
+    debugPrint('Initializing calendar with user ID: ${event.userId}');
 
     _repository = CalendarRepository(
       supabaseClient: event.supabaseClient,
@@ -58,30 +58,30 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
     CalendarLoadEvents event,
     Emitter<CalendarState> emit,
   ) async {
-    print('CalendarBloc: Loading events...');
+    debugPrint('CalendarBloc: Loading events...');
     emit(const CalendarLoading());
 
     try {
       if (_repository == null) {
-        print('Calendar repository is null');
+        debugPrint('Calendar repository is null');
         emit(const CalendarError('Calendar not initialized'));
         return;
       }
 
       final events = await _repository!.getEvents().catchError((e) {
-        print('Error loading events: $e');
+        debugPrint('Error loading events: $e');
         // If there's an error (like table doesn't exist), return empty list
         return <CalendarEventModel>[];
       });
 
-      print('CalendarBloc: Loaded ${events.length} events');
+      debugPrint('CalendarBloc: Loaded ${events.length} events');
 
       // Debug event data
       if (events.isNotEmpty) {
         final sampleEvent = events.first;
-        print('Sample event: title=${sampleEvent.title}, start=${sampleEvent.start}, end=${sampleEvent.end}, calendarId=${sampleEvent.calendarId}');
+        debugPrint('Sample event: title=${sampleEvent.title}, start=${sampleEvent.start}, end=${sampleEvent.end}, calendarId=${sampleEvent.calendarId}');
       } else {
-        print('No events found');
+        debugPrint('No events found');
       }
 
       emit(CalendarLoaded(
@@ -89,9 +89,9 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         calendarViewType: state.calendarViewType,
       ));
 
-      print('CalendarLoaded state emitted successfully');
+      debugPrint('CalendarLoaded state emitted successfully');
     } catch (e) {
-      print('Failed to load events: $e');
+      debugPrint('Failed to load events: $e');
       // Even if loading fails, emit a loaded state with empty lists
       // This prevents the UI from getting stuck in loading state
       emit(CalendarLoaded(
@@ -128,7 +128,7 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
           calendarViewType: currentState.calendarViewType,
         ));
       } catch (e) {
-        print('Failed to add event: $e');
+        debugPrint('Failed to add event: $e');
         if (e.toString().contains('Table does not exist')) {
           emit(CalendarError('The calendar_events table does not exist in Supabase. Please run the setup script.'));
         } else {
@@ -146,7 +146,7 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         });
       }
     } catch (e) {
-      print('Failed to add event: $e');
+      debugPrint('Failed to add event: $e');
       emit(CalendarError('Failed to add event: $e'));
     }
   }
@@ -181,7 +181,7 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         calendarViewType: currentState.calendarViewType,
       ));
     } catch (e) {
-      print('Failed to update event: $e');
+      debugPrint('Failed to update event: $e');
       emit(CalendarError('Failed to update event: $e'));
     }
   }
@@ -214,7 +214,7 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         calendarViewType: currentState.calendarViewType,
       ));
     } catch (e) {
-      print('Failed to delete event: $e');
+      debugPrint('Failed to delete event: $e');
       emit(CalendarError('Failed to delete event: $e'));
     }
   }
@@ -307,7 +307,7 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         activeCalendarFilter: event.calendarId,
       ));
     } catch (e) {
-      print('Error filtering events: $e');
+      debugPrint('Error filtering events: $e');
       emit(CalendarError('Failed to filter events: $e'));
 
       // Revert to previous state after delay

@@ -155,10 +155,10 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
   }
 
   _AppointmentDataSource _getCalendarDataSource() {
-    print('SfCalendarWidget: Converting ${widget.events.length} events to appointments');
+    debugPrint('SfCalendarWidget: Converting ${widget.events.length} events to appointments');
 
     List<Appointment> appointments = widget.events.map((event) {
-      print('Processing event: ${event.id}, ${event.title}, ${event.start}-${event.end}');
+      debugPrint('Processing event: ${event.id}, ${event.title}, ${event.start}-${event.end}');
       return Appointment(
         id: event.id,
         subject: event.title,
@@ -171,7 +171,7 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
       );
     }).toList();
 
-    print('Created ${appointments.length} appointments for calendar');
+    debugPrint('Created ${appointments.length} appointments for calendar');
     return _AppointmentDataSource(appointments);
   }
 
@@ -303,12 +303,12 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
       defaultCalendar = calendarManagementState.defaultCalendar;
 
       // Debug output
-      print('Found ${availableCalendars.length} calendars for dropdown');
+      debugPrint('Found ${availableCalendars.length} calendars for dropdown');
       for (var cal in availableCalendars) {
-        print('Calendar: ${cal.id}, ${cal.name}, ${cal.color}');
+        debugPrint('Calendar: ${cal.id}, ${cal.name}, ${cal.color}');
       }
     } else {
-      print('CalendarManagementState is not loaded: ${calendarManagementState.runtimeType}');
+      debugPrint('CalendarManagementState is not loaded: ${calendarManagementState.runtimeType}');
     }
 
     // Fallback if no calendars available
@@ -358,12 +358,12 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
       availableCalendars = calendarManagementState.calendars.where((cal) => cal.id.isNotEmpty).toList();
 
       // Debug output
-      print('Edit dialog: Found ${availableCalendars.length} calendars');
+      debugPrint('Edit dialog: Found ${availableCalendars.length} calendars');
       for (var cal in availableCalendars) {
-        print('Calendar: ${cal.id}, ${cal.name}, ${cal.color}');
+        debugPrint('Calendar: ${cal.id}, ${cal.name}, ${cal.color}');
       }
     } else {
-      print('Edit dialog: CalendarManagementState is not loaded: ${calendarManagementState.runtimeType}');
+      debugPrint('Edit dialog: CalendarManagementState is not loaded: ${calendarManagementState.runtimeType}');
     }
 
     // Ensure the event's calendar is in the list, or add it if missing
@@ -472,7 +472,7 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
           widget.onEventUpdate!(updatedEvent);
         }
       } catch (e) {
-        print('Error updating event: $e');
+        debugPrint('Error updating event: $e');
       }
     }
   }

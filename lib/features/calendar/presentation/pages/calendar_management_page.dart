@@ -35,7 +35,7 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
   @override
   void initState() {
     super.initState();
-    print("CalendarManagementPage initialized");
+    debugPrint("CalendarManagementPage initialized");
     // Load calendars when page initializes
     context.read<CalendarManagementBloc>().add(const LoadCalendars());
   }
@@ -52,10 +52,10 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
           // Primary listener for state changes
           BlocListener<CalendarManagementBloc, CalendarManagementState>(
             listener: (context, state) {
-              print("State listener received: ${state.runtimeType}");
+              debugPrint("State listener received: ${state.runtimeType}");
 
               if (state is DeviceCalendarsAvailable) {
-                print("HANDLING DeviceCalendarsAvailable in listener with ${state.deviceCalendars.length} calendars");
+                debugPrint("HANDLING DeviceCalendarsAvailable in listener with ${state.deviceCalendars.length} calendars");
                 // Use a post-frame callback to avoid build phase issues
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   _showDeviceCalendarSelectionDialog(state.deviceCalendars);
@@ -213,7 +213,7 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
   }
 
   void _showDeviceCalendarSelectionDialog(List<dynamic> deviceCalendars) {
-    print("SHOWING DIALOG for ${deviceCalendars.length} device calendars");
+    debugPrint("SHOWING DIALOG for ${deviceCalendars.length} device calendars");
 
     // Track selected calendars
     Set<dynamic> selectedCalendars = {};
@@ -243,7 +243,7 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
                           title: Text(deviceCalendar.name ?? 'Unnamed Calendar'),
                           value: isSelected,
                           onChanged: (bool? value) {
-                            print("Calendar selection changed: ${deviceCalendar.name} - $value");
+                            debugPrint("Calendar selection changed: ${deviceCalendar.name} - $value");
                             setDialogState(() {
                               if (value == true) {
                                 selectedCalendars.add(deviceCalendar);
@@ -266,7 +266,7 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
               ),
               ElevatedButton(
                 onPressed: () {
-                  print("Import button pressed for ${selectedCalendars.length} calendars");
+                  debugPrint("Import button pressed for ${selectedCalendars.length} calendars");
                   Navigator.pop(dialogContext);
                   _importSelectedDeviceCalendars(selectedCalendars.toList());
                 },
@@ -292,7 +292,7 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
 
     // Process each selected calendar
     for (final deviceCalendar in selectedCalendars) {
-      print("Processing calendar: ${deviceCalendar.name}");
+      debugPrint("Processing calendar: ${deviceCalendar.name}");
 
       // Import from device calendar
       showDialog(

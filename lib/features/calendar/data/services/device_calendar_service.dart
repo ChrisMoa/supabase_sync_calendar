@@ -14,11 +14,11 @@ class DeviceCalendarService {
       // Check permissions
       var permissionsGranted = await _deviceCalendarPlugin.hasPermissions();
       if (permissionsGranted.data == null || permissionsGranted.data == false) {
-        print('No calendar permissions, requesting...');
+        debugPrint('No calendar permissions, requesting...');
         permissionsGranted = await _deviceCalendarPlugin.requestPermissions();
 
         if (permissionsGranted.data == null || permissionsGranted.data == false) {
-          print('Calendar permissions denied by user');
+          debugPrint('Calendar permissions denied by user');
           throw Exception('Calendar access denied. Please enable calendar permissions in your device settings.');
         }
       }
@@ -31,15 +31,15 @@ class DeviceCalendarService {
         // Debug each calendar for troubleshooting
         for (int i = 0; i < calendars.length; i++) {
           final calendar = calendars[i];
-          print("Device calendar $i: id=${calendar.id}, name=${calendar.name}, color=${calendar.color}");
+          debugPrint("Device calendar $i: id=${calendar.id}, name=${calendar.name}, color=${calendar.color}");
         }
         return calendars;
       } else {
-        print('Failed to get calendars: ${calendarsResult.errors.toString()}');
+        debugPrint('Failed to get calendars: ${calendarsResult.errors.toString()}');
         throw Exception('Failed to retrieve device calendars: ${calendarsResult.errors.toString()}');
       }
     } catch (e) {
-      print('Error getting device calendars: $e');
+      debugPrint('Error getting device calendars: $e');
       throw Exception('Failed to access device calendars: $e');
     }
   }

@@ -34,7 +34,7 @@ class _LoginPageState extends State<LoginPage> {
       ),
       body: BlocConsumer<CustomAuthBloc, CustomAuthState>(
         listener: (context, state) {
-          print('Auth state changed: ${state.runtimeType}');
+          debugPrint('Auth state changed: ${state.runtimeType}');
 
           if (state is AuthError) {
             // Use post frame callback to show error snackbar
@@ -52,7 +52,7 @@ class _LoginPageState extends State<LoginPage> {
               // Show success message
               ErrorUtils.showSuccessSnackBar(context, 'Successfully logged in');
 
-              print('Navigating to calendar dashboard with direct route');
+              debugPrint('Navigating to calendar dashboard with direct route');
 
               // Navigate directly to dashboard
               Navigator.of(context).pushReplacement(

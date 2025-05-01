@@ -52,10 +52,10 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
   @override
   void initState() {
     super.initState();
-    print('CalendarDashboardPage initState');
+    debugPrint('CalendarDashboardPage initState');
     // Use a post-frame callback to initialize after first render
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      print('Initializing calendar bloc from initState');
+      debugPrint('Initializing calendar bloc from initState');
       // Initialize the calendar with the Supabase client and user
       context.read<CalendarBloc>().add(CalendarInitialize(
             supabaseClient: widget.supabaseClient,
@@ -133,7 +133,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
         ),
         body: BlocConsumer<CalendarBloc, CalendarState>(
           listener: (context, state) {
-            print('Calendar state changed: ${state.runtimeType}');
+            debugPrint('Calendar state changed: ${state.runtimeType}');
 
             if (state is CalendarError) {
               SchedulerBinding.instance.addPostFrameCallback((_) {
@@ -147,28 +147,28 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
             }
           },
           builder: (context, state) {
-            print('Building UI for calendar state: ${state.runtimeType}');
+            debugPrint('Building UI for calendar state: ${state.runtimeType}');
             if (state is CalendarLoading) {
               return const LoadingIndicator(message: 'Loading your calendar events...');
             } else if (state is CalendarLoaded) {
-              print('Building calendar with ${state.events.length} events');
+              debugPrint('Building calendar with ${state.events.length} events');
               if (state.events.isEmpty) {
-                print('WARNING: No events to display in calendar');
+                debugPrint('WARNING: No events to display in calendar');
               } else {
                 // Debug the first few events
                 final count = state.events.length > 3 ? 3 : state.events.length;
                 for (int i = 0; i < count; i++) {
                   final e = state.events[i];
-                  print('Event $i: ${e.title}, ${e.start}-${e.end}, color: ${e.color}');
+                  debugPrint('Event $i: ${e.title}, ${e.start}-${e.end}, color: ${e.color}');
                 }
                 context.read<CalendarManagementBloc>().add(const LoadCalendars());
               }
               return _buildCalendar(state);
             } else {
-              print('Initializing calendar...');
+              debugPrint('Initializing calendar...');
               // Instead of showing loading, initialize the bloc
               if (state is CalendarInitial) {
-                print('Initializing calendar bloc with user ID: ${widget.user.id}');
+                debugPrint('Initializing calendar bloc with user ID: ${widget.user.id}');
                 context.read<CalendarBloc>().add(CalendarInitialize(
                       supabaseClient: widget.supabaseClient,
                       userId: widget.user.id,
@@ -188,7 +188,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
   }
 
   Widget _buildCalendar(CalendarLoaded state) {
-    print('Building SfCalendarWidget with ${state.events.length} events and viewType: ${state.calendarViewType}');
+    debugPrint('Building SfCalendarWidget with ${state.events.length} events and viewType: ${state.calendarViewType}');
 
     // Ensure CalendarManagementBloc is available to SfCalendarWidget
     return BlocProvider<CalendarManagementBloc>(
@@ -297,10 +297,10 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
 
     // Add special listener for device calendars directly to the bloc
     calendarManagementBloc.stream.listen((state) {
-      print("State observed outside build context: ${state.runtimeType}");
+      debugPrint("State observed outside build context: ${state.runtimeType}");
 
       if (state is DeviceCalendarsAvailable && state.deviceCalendars.isNotEmpty) {
-        print("DeviceCalendarsAvailable detected outside widget");
+        debugPrint("DeviceCalendarsAvailable detected outside widget");
 
         // Show dialog outside of build context
         showDialog(
@@ -350,14 +350,14 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
                   itemBuilder: (context, index) {
                     final deviceCalendar = deviceCalendars[index];
                     // Print calendar details for debugging
-                    print("Calendar $index: name=${deviceCalendar.name}, id=${deviceCalendar.id}");
+                    debugPrint("Calendar $index: name=${deviceCalendar.name}, id=${deviceCalendar.id}");
 
                     return CheckboxListTile(
                       title: Text(deviceCalendar.name ?? 'Unnamed Calendar'),
                       subtitle: Text(deviceCalendar.id ?? ''),
                       value: selectedStates[index],
                       onChanged: (bool? value) {
-                        print("Selection changed for calendar ${deviceCalendar.name}: $value");
+                        debugPrint("Selection changed for calendar ${deviceCalendar.name}: $value");
                         setState(() {
                           selectedStates[index] = value ?? false;
                         });
@@ -386,7 +386,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
                 }
               }
 
-              print("Selected ${selectedCalendars.length} calendars");
+              debugPrint("Selected ${selectedCalendars.length} calendars");
 
               // Process each selected calendar
               _processSelectedCalendars(selectedCalendars, bloc);
@@ -413,7 +413,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
     // Process each calendar
     for (int i = 0; i < selectedCalendars.length; i++) {
       final deviceCalendar = selectedCalendars[i];
-      print("Processing device calendar: name=${deviceCalendar.name}, id=${deviceCalendar.id}");
+      debugPrint("Processing device calendar: name=${deviceCalendar.name}, id=${deviceCalendar.id}");
 
       // Create a new calendar model
       final newCalendar = CalendarModel(
@@ -426,11 +426,11 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
       );
 
       // Add the calendar
-      print("Adding calendar: ${newCalendar.name} with ID ${newCalendar.id}");
+      debugPrint("Adding calendar: ${newCalendar.name} with ID ${newCalendar.id}");
       bloc.add(AddCalendar(newCalendar));
 
       // Sync the calendar
-      print("Syncing calendar: ${newCalendar.name}");
+      debugPrint("Syncing calendar: ${newCalendar.name}");
       bloc.add(SyncDeviceCalendar(newCalendar));
     }
   }
@@ -792,7 +792,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
 
     // Handle files shared while the app is running
     FlutterSharingIntent.instance.getMediaStream().listen((List<SharedFile> value) {
-      print('Media stream: $value');
+      debugPrint('Media stream: $value');
     });
   }
 }
