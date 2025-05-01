@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:supabase_sync_calendar/core/models/calendar_model.dart';
+import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_management_bloc/calendar_management_bloc.dart';
+import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_management_bloc/calendar_management_event.dart';
+import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_management_bloc/calendar_management_state.dart';
 import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_bloc/calendar_bloc.dart';
 import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_bloc/calendar_event.dart';
 import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_bloc/calendar_state.dart';
-import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_management_bloc/calendar_management_bloc.dart';
-import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_management_bloc/calendar_management_state.dart';
+import 'package:supabase_sync_calendar/core/models/calendar_model.dart';
 
 class CalendarSelector extends StatelessWidget {
   const CalendarSelector({super.key});
@@ -14,119 +15,107 @@ class CalendarSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocBuilder<CalendarManagementBloc, CalendarManagementState>(
       builder: (context, state) {
-        if (state is! CalendarManagementLoaded) {
-          return const SizedBox(); // Nothing to show yet
+        if (state is CalendarManagementLoading) {
+          return const SizedBox(
+            width: 200,
+            child: Center(child: CircularProgressIndicator()),
+          );
         }
 
-        final calendars = state.calendars;
-        if (calendars.isEmpty) {
-          return const SizedBox(); // No calendars to show
-        }
+        if (state is CalendarManagementLoaded) {
+          final calendars = state.calendars;
+          debugPrint('📋 CALENDAR SELECTOR: Available calendars:');
+          for (final calendar in calendars) {
+            debugPrint('📋 CALENDAR: ID=${calendar.id}, Name=${calendar.name}, Default=${calendar.isDefault}');
+          }
 
-        return BlocBuilder<CalendarBloc, CalendarState>(
-          builder: (context, calendarState) {
-            final activeCalendarId = calendarState.activeCalendarFilter;
+          return BlocBuilder<CalendarBloc, CalendarState>(
+            builder: (context, calendarState) {
+              final activeCalendarId = calendarState is CalendarLoaded ? calendarState.activeCalendarFilter : null;
+              debugPrint('📋 CALENDAR SELECTOR: Active calendar ID: $activeCalendarId');
 
-            return PopupMenuButton<String?>(
-              icon: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.filter_list,
-                    color: Theme.of(context).primaryColor,
+              // Find the active calendar name
+              String activeCalendarName = 'All Calendars';
+              if (activeCalendarId != null) {
+                final activeCalendar = calendars.firstWhere(
+                  (cal) => cal.id == activeCalendarId,
+                  orElse: () => CalendarModel(
+                    id: '',
+                    name: 'Unknown Calendar',
+                    colorValue: 0xFF000000,
+                    isDefault: false,
+                    userId: '',
+                    type: CalendarType.local,
                   ),
-                  const SizedBox(width: 4),
-                  Text(
-                    _getCalendarFilterLabel(activeCalendarId, calendars),
-                    style: TextStyle(
-                      color: Theme.of(context).primaryColor,
-                      fontWeight: FontWeight.bold,
-                    ),
+                );
+                activeCalendarName = activeCalendar.name;
+              }
+
+              return Container(
+                width: 200,
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: DropdownButton<String>(
+                  value: activeCalendarId,
+                  isExpanded: true,
+                  hint: const Text('Select Calendar'),
+                  underline: Container(
+                    height: 2,
+                    color: Theme.of(context).colorScheme.primary,
                   ),
-                ],
-              ),
-              onSelected: (calendarId) {
-                context.read<CalendarBloc>().add(
-                      CalendarFilterByCalendar(calendarId),
-                    );
-              },
-              itemBuilder: (context) => [
-                // Option to show all calendars
-                const PopupMenuItem(
-                  value: null,
-                  child: Text('All Calendars'),
-                ),
-                // Divider
-                const PopupMenuItem(
-                  enabled: false,
-                  height: 1,
-                  padding: EdgeInsets.zero,
-                  child: Divider(),
-                ),
-                // Individual calendars
-                ...calendars.map((calendar) => PopupMenuItem(
-                      value: calendar.id,
+                  items: [
+                    // All Calendars option
+                    DropdownMenuItem<String>(
+                      value: null,
                       child: Row(
                         children: [
-                          Container(
-                            width: 12,
-                            height: 12,
-                            decoration: BoxDecoration(
-                              color: calendar.color,
-                              shape: BoxShape.circle,
-                            ),
+                          Icon(
+                            Icons.calendar_today,
+                            size: 20,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
                           const SizedBox(width: 8),
-                          Text(calendar.name),
-                          if (calendar.isDefault)
-                            Container(
-                              margin: const EdgeInsets.only(left: 8),
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context)
-                                    .primaryColor
-                                    .withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Text(
-                                'Default',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
+                          const Text('All Calendars'),
                         ],
                       ),
-                    )),
-              ],
-            );
-          },
-        );
+                    ),
+                    // Calendar list
+                    ...calendars.map((calendar) {
+                      return DropdownMenuItem<String>(
+                        value: calendar.id,
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 16,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: Color(calendar.colorValue),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                calendar.name,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ],
+                  onChanged: (String? newValue) {
+                    debugPrint('📋 CALENDAR SELECTOR: Selected calendar ID: $newValue');
+                    context.read<CalendarBloc>().add(CalendarFilterByCalendar(newValue));
+                  },
+                ),
+              );
+            },
+          );
+        }
+
+        return const SizedBox.shrink();
       },
     );
-  }
-
-  String _getCalendarFilterLabel(
-      String? activeCalendarId, List<CalendarModel> calendars) {
-    if (activeCalendarId == null) {
-      return 'All Calendars';
-    }
-
-    final calendar = calendars.firstWhere(
-      (cal) => cal.id == activeCalendarId,
-      orElse: () => CalendarModel(
-        id: '',
-        name: 'Unknown',
-        color: Colors.grey,
-        userId: '',
-        type: CalendarType.local,
-      ),
-    );
-
-    return calendar.name;
   }
 }

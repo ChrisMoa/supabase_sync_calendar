@@ -1,37 +1,55 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter/material.dart';
+import 'package:hive/hive.dart';
 import 'package:supabase_sync_calendar/core/utils/supabase_utils.dart';
 
+part 'calendar_event_model.g.dart';
+
+@HiveType(typeId: 2)
 class CalendarEventModel extends Equatable {
+  @HiveField(0)
   final String id;
+  @HiveField(1)
   final String title;
+  @HiveField(2)
   final String description;
+  @HiveField(3)
   final DateTime start;
+  @HiveField(4)
   final DateTime end;
-  final Color color;
+  @HiveField(5)
+  final int colorValue;
+  @HiveField(6)
   final String userId;
+  @HiveField(7)
   final bool wholeDay;
+  @HiveField(8)
   final String calendarId; // Now references the calendar table
+  @HiveField(9)
   final DateTime? reminder;
+  @HiveField(10)
   final List<String> appendixes;
-  final bool
-      isExternalReadOnly; // Added to mark external sync events as read-only
+  @HiveField(11)
+  final bool isExternalReadOnly; // Added to mark external sync events as read-only
+  @HiveField(12)
   final String? seriesId;
 
-  const CalendarEventModel({
+  Color get color => Color(colorValue);
+
+  CalendarEventModel({
     required this.id,
     required this.title,
     required this.description,
     required this.start,
     required this.end,
-    required this.color,
+    required this.colorValue,
     required this.userId,
     required this.calendarId,
     this.wholeDay = false,
     this.reminder,
     this.appendixes = const [],
     this.isExternalReadOnly = false,
-    this.seriesId, // Add this parameter
+    this.seriesId,
   });
 
   CalendarEventModel copyWith({
@@ -40,12 +58,13 @@ class CalendarEventModel extends Equatable {
     String? description,
     DateTime? start,
     DateTime? end,
-    Color? color,
+    int? colorValue,
     String? userId,
     bool? wholeDay,
     String? calendarId,
     DateTime? reminder,
     List<String>? appendixes,
+    bool? isExternalReadOnly,
     String? seriesId,
   }) {
     return CalendarEventModel(
@@ -54,43 +73,38 @@ class CalendarEventModel extends Equatable {
       description: description ?? this.description,
       start: start ?? this.start,
       end: end ?? this.end,
-      color: color ?? this.color,
+      colorValue: colorValue ?? this.colorValue,
       userId: userId ?? this.userId,
       wholeDay: wholeDay ?? this.wholeDay,
       calendarId: calendarId ?? this.calendarId,
       reminder: reminder ?? this.reminder,
       appendixes: appendixes ?? this.appendixes,
+      isExternalReadOnly: isExternalReadOnly ?? this.isExternalReadOnly,
       seriesId: seriesId ?? this.seriesId,
     );
   }
 
-  // Convert from Supabase Map to CalendarEventModel
   factory CalendarEventModel.fromJson(Map<String, dynamic> json) {
     int colorValue = json[SupabaseUtils.colColor] as int;
-    // Add back the alpha channel (fully opaque)
     colorValue = colorValue | 0xFF000000;
 
     return CalendarEventModel(
       id: json[SupabaseUtils.colId] as String,
-      title: json[SupabaseUtils.colTitle] as String,
-      description: json[SupabaseUtils.colDescription] as String,
+      title: json[SupabaseUtils.colTitle] as String? ?? 'Untitled Event',
+      description: json[SupabaseUtils.colDescription] as String? ?? '',
       start: DateTime.parse(json[SupabaseUtils.colStartTime] as String),
       end: DateTime.parse(json[SupabaseUtils.colEndTime] as String),
-      color: Color(colorValue),
+      colorValue: colorValue,
       userId: json[SupabaseUtils.colUserId] as String,
       wholeDay: json['whole_day'] as bool? ?? false,
       calendarId: json['calendar_id'] as String? ?? 'default',
-      reminder: json['reminder'] != null
-          ? DateTime.parse(json['reminder'] as String)
-          : null,
-      appendixes: json['appendixes'] != null
-          ? List<String>.from(json['appendixes'] as List)
-          : const [],
+      reminder: json['reminder'] != null ? DateTime.parse(json['reminder'] as String) : null,
+      appendixes: json['appendixes'] != null ? List<String>.from(json['appendixes'] as List) : const [],
+      isExternalReadOnly: json['is_external_read_only'] as bool? ?? false,
       seriesId: json['series_id'] as String?,
     );
   }
 
-  // Convert to Supabase Map from CalendarEventModel
   Map<String, dynamic> toJson() {
     return {
       SupabaseUtils.colId: id,
@@ -98,13 +112,13 @@ class CalendarEventModel extends Equatable {
       SupabaseUtils.colDescription: description,
       SupabaseUtils.colStartTime: start.toIso8601String(),
       SupabaseUtils.colEndTime: end.toIso8601String(),
-      SupabaseUtils.colColor:
-          color.value & 0xFFFFFF, // Remove alpha channel and keep only RGB
+      SupabaseUtils.colColor: colorValue & 0xFFFFFF,
       SupabaseUtils.colUserId: userId,
       'whole_day': wholeDay,
       'calendar_id': calendarId,
       'reminder': reminder?.toIso8601String(),
       'appendixes': appendixes,
+      'is_external_read_only': isExternalReadOnly,
       'series_id': seriesId,
     };
   }
@@ -116,12 +130,13 @@ class CalendarEventModel extends Equatable {
         description,
         start,
         end,
-        color,
+        colorValue,
         userId,
         wholeDay,
         calendarId,
         reminder,
         appendixes,
+        isExternalReadOnly,
         seriesId,
       ];
 }

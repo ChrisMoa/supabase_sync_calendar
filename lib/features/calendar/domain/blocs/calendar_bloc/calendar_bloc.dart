@@ -26,29 +26,35 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
     on<CalendarChangeView>(_onChangeView);
     on<CalendarSyncEvent>(_onSyncEvent);
     on<CalendarFilterByCalendar>(_onFilterByCalendar);
+    on<CalendarRefresh>(_onRefresh);
   }
 
   void _onInitialize(
     CalendarInitialize event,
     Emitter<CalendarState> emit,
   ) {
-    print('Initializing calendar with user ID: ${event.userId}');
+    debugPrint('Initializing calendar with user ID: ${event.userId}' + (event.isOfflineMode ? ' in OFFLINE mode' : ''));
 
     _repository = CalendarRepository(
       supabaseClient: event.supabaseClient,
       userId: event.userId,
+      isOfflineMode: event.isOfflineMode,
     );
 
-    // Set up real-time sync
-    _syncService = DatabaseSyncService(
-      supabaseClient: event.supabaseClient,
-      userId: event.userId,
-      onEventAdded: (event) => add(CalendarSyncEvent.added(event)),
-      onEventUpdated: (event) => add(CalendarSyncEvent.updated(event)),
-      onEventDeleted: (id) => add(CalendarSyncEvent.deleted(id)),
-    );
+    // Set up real-time sync only if not in offline mode
+    if (!event.isOfflineMode) {
+      _syncService = DatabaseSyncService(
+        supabaseClient: event.supabaseClient,
+        userId: event.userId,
+        onEventAdded: (event) => add(CalendarSyncEvent.added(event)),
+        onEventUpdated: (event) => add(CalendarSyncEvent.updated(event)),
+        onEventDeleted: (id) => add(CalendarSyncEvent.deleted(id)),
+      );
 
-    _syncService?.startSync();
+      _syncService?.startSync();
+    } else {
+      debugPrint('🔌 OFFLINE: Skipping real-time sync service initialization');
+    }
 
     emit(const CalendarLoading());
     add(const CalendarLoadEvents());
@@ -58,31 +64,34 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
     CalendarLoadEvents event,
     Emitter<CalendarState> emit,
   ) async {
-    print('CalendarBloc: Loading events...');
+    debugPrint('CalendarBloc: Loading events...');
     emit(const CalendarLoading());
 
     try {
       if (_repository == null) {
-        print('Calendar repository is null');
+        debugPrint('Calendar repository is null');
         emit(const CalendarError('Calendar not initialized'));
         return;
       }
 
-      final events = await _repository!.getEvents().catchError((e) {
-        print('Error loading events: $e');
+      final events = await _repository!
+          .getEvents(
+        fetchFromSupabaseIfEmpty: event.fetchFromSupabaseIfEmpty,
+      )
+          .catchError((e) {
+        debugPrint('Error loading events: $e');
         // If there's an error (like table doesn't exist), return empty list
         return <CalendarEventModel>[];
       });
 
-      print('CalendarBloc: Loaded ${events.length} events');
+      debugPrint('CalendarBloc: Loaded ${events.length} events');
 
       // Debug event data
       if (events.isNotEmpty) {
         final sampleEvent = events.first;
-        print(
-            'Sample event: title=${sampleEvent.title}, start=${sampleEvent.start}, end=${sampleEvent.end}, calendarId=${sampleEvent.calendarId}');
+        debugPrint('Sample event: title=${sampleEvent.title}, start=${sampleEvent.start}, end=${sampleEvent.end}, calendarId=${sampleEvent.calendarId}');
       } else {
-        print('No events found');
+        debugPrint('No events found');
       }
 
       emit(CalendarLoaded(
@@ -90,9 +99,9 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         calendarViewType: state.calendarViewType,
       ));
 
-      print('CalendarLoaded state emitted successfully');
+      debugPrint('CalendarLoaded state emitted successfully');
     } catch (e) {
-      print('Failed to load events: $e');
+      debugPrint('Failed to load events: $e');
       // Even if loading fails, emit a loaded state with empty lists
       // This prevents the UI from getting stuck in loading state
       emit(CalendarLoaded(
@@ -129,10 +138,9 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
           calendarViewType: currentState.calendarViewType,
         ));
       } catch (e) {
-        print('Failed to add event: $e');
+        debugPrint('Failed to add event: $e');
         if (e.toString().contains('Table does not exist')) {
-          emit(CalendarError(
-              'The calendar_events table does not exist in Supabase. Please run the setup script.'));
+          emit(CalendarError('The calendar_events table does not exist in Supabase. Please run the setup script.'));
         } else {
           emit(CalendarError('Failed to add event: $e'));
         }
@@ -148,7 +156,7 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         });
       }
     } catch (e) {
-      print('Failed to add event: $e');
+      debugPrint('Failed to add event: $e');
       emit(CalendarError('Failed to add event: $e'));
     }
   }
@@ -183,7 +191,7 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         calendarViewType: currentState.calendarViewType,
       ));
     } catch (e) {
-      print('Failed to update event: $e');
+      debugPrint('Failed to update event: $e');
       emit(CalendarError('Failed to update event: $e'));
     }
   }
@@ -209,15 +217,14 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
       await _repository!.deleteEvent(event.eventId);
 
       // Filter out the deleted event from the lists
-      final filteredEvents =
-          currentState.events.where((e) => e.id != event.eventId).toList();
+      final filteredEvents = currentState.events.where((e) => e.id != event.eventId).toList();
 
       emit(CalendarLoaded(
         events: filteredEvents,
         calendarViewType: currentState.calendarViewType,
       ));
     } catch (e) {
-      print('Failed to delete event: $e');
+      debugPrint('Failed to delete event: $e');
       emit(CalendarError('Failed to delete event: $e'));
     }
   }
@@ -273,8 +280,7 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         if (event.eventId == null) return;
 
         // Filter out the deleted event from the lists
-        final filteredEvents =
-            currentState.events.where((e) => e.id != event.eventId).toList();
+        final filteredEvents = currentState.events.where((e) => e.id != event.eventId).toList();
 
         emit(CalendarLoaded(
           events: filteredEvents,
@@ -304,8 +310,8 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
     try {
       // If calendarId is null, show all events
       final events = event.calendarId == null
-          ? await _repository!.getEvents()
-          : await _repository!.getEvents(calendarId: event.calendarId);
+          ? await _repository!.getEvents(fetchFromSupabaseIfEmpty: event.fetchFromSupabaseIfEmpty)
+          : await _repository!.getEvents(calendarId: event.calendarId, fetchFromSupabaseIfEmpty: event.fetchFromSupabaseIfEmpty);
 
       emit(CalendarLoaded(
         events: events,
@@ -313,7 +319,7 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         activeCalendarFilter: event.calendarId,
       ));
     } catch (e) {
-      print('Error filtering events: $e');
+      debugPrint('Error filtering events: $e');
       emit(CalendarError('Failed to filter events: $e'));
 
       // Revert to previous state after delay
@@ -321,6 +327,14 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         emit(currentState);
       });
     }
+  }
+
+  void _onRefresh(
+    CalendarRefresh event,
+    Emitter<CalendarState> emit,
+  ) {
+    debugPrint('Manual refresh triggered');
+    add(const CalendarLoadEvents(fetchFromSupabaseIfEmpty: true));
   }
 
   // Generate sample events for testing
@@ -335,31 +349,31 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
       {
         'title': 'Morning Meeting',
         'description': 'Daily team standup',
-        'color': Colors.blue,
+        'colorValue': Colors.blue.value,
         'calendarId': 'work',
       },
       {
         'title': 'Lunch with Client',
         'description': 'Discuss new project requirements',
-        'color': Colors.green,
+        'colorValue': Colors.green.value,
         'calendarId': 'work',
       },
       {
         'title': 'Project Review',
         'description': 'End of sprint review',
-        'color': Colors.orange,
+        'colorValue': Colors.orange.value,
         'calendarId': 'work',
       },
       {
         'title': 'Family Dinner',
         'description': 'At home',
-        'color': Colors.purple,
+        'colorValue': Colors.purple.value,
         'calendarId': 'family',
       },
       {
         'title': 'Gym Session',
         'description': 'Cardio and weights',
-        'color': Colors.red,
+        'colorValue': Colors.red.value,
         'calendarId': 'personal',
       },
     ];
@@ -382,41 +396,40 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
 
       if (isWholeDay) {
         // Whole day event
-        startTime =
-            DateTime(eventDate.year, eventDate.month, eventDate.day, 0, 0);
-        endTime = DateTime(
-            eventDate.year, eventDate.month, eventDate.day, 23, 59, 59);
+        startTime = DateTime(eventDate.year, eventDate.month, eventDate.day, 0, 0);
+        endTime = DateTime(eventDate.year, eventDate.month, eventDate.day, 23, 59, 59);
       } else {
         // Regular event
         final startHour = 7 + random.nextInt(11);
-        final startMinute =
-            [0, 15, 30, 45][random.nextInt(4)]; // Quarter-hour intervals
+        final startMinute = [0, 15, 30, 45][random.nextInt(4)]; // Quarter-hour intervals
         final durationMinutes = 30 + random.nextInt(5) * 30; // 30min increments
 
-        startTime = DateTime(eventDate.year, eventDate.month, eventDate.day,
-            startHour, startMinute);
+        startTime = DateTime(eventDate.year, eventDate.month, eventDate.day, startHour, startMinute);
 
         endTime = startTime.add(Duration(minutes: durationMinutes));
       }
 
       // 30% chance of having a reminder
-      DateTime? reminder = random.nextInt(10) < 3
-          ? startTime.subtract(Duration(minutes: 15 * (1 + random.nextInt(8))))
-          : null;
+      DateTime? reminder = random.nextInt(10) < 3 ? startTime.subtract(Duration(minutes: 15 * (1 + random.nextInt(8)))) : null;
+
+      // For sample events, let's not use series functionality
+      final String? seriesId = null;
 
       events.add(
         CalendarEventModel(
           id: uuid.v4(),
           title: template['title'] as String,
-          description: template['description'] as String,
+          description: template['description'] as String? ?? '',
           start: startTime,
           end: endTime,
-          color: template['color'] as Color,
-          userId: 'sample',
           wholeDay: isWholeDay,
-          calendarId: template['calendarId'] as String,
           reminder: reminder,
-          appendixes: const [],
+          appendixes: const [], // Assuming appendixes start empty for generated events
+          seriesId: seriesId,
+          colorValue: template['colorValue'] as int,
+          userId: 'sample',
+          calendarId: template['calendarId'] as String,
+          isExternalReadOnly: false,
         ),
       );
     }

@@ -79,7 +79,7 @@ class ICSImportService {
         description: description,
         start: start,
         end: end,
-        color: calendar.color,
+        colorValue: calendar.colorValue,
         userId: calendar.userId,
         calendarId: calendar.id,
         wholeDay: isAllDay,
@@ -98,40 +98,40 @@ class ICSImportService {
       for (var sharedFile in sharedFiles) {
         final String? fileValue = sharedFile.value;
         if (fileValue == null) {
-          print('Warning: File value is null, skipping...');
+          debugPrint('Warning: File value is null, skipping...');
           continue;
         }
 
-        print('Processing file: $fileValue with type: ${sharedFile.type}');
+        debugPrint('Processing file: $fileValue with type: ${sharedFile.type}');
 
         try {
           String content;
           if (fileValue.startsWith('content://')) {
-            print('Reading content URI: $fileValue');
+            debugPrint('Reading content URI: $fileValue');
             try {
               content = await _methodChannel.invokeMethod('readContentUri', {'uri': fileValue});
-              print('Successfully read content from URI');
+              debugPrint('Successfully read content from URI');
             } catch (e) {
-              print('Error reading content URI: $e');
+              debugPrint('Error reading content URI: $e');
               rethrow;
             }
           } else {
-            print('Reading file path: $fileValue');
+            debugPrint('Reading file path: $fileValue');
             content = await File(fileValue).readAsString();
           }
 
-          print('Parsing ICS content...');
+          debugPrint('Parsing ICS content...');
           final ICalendar calendar = ICalendar.fromString(content);
-          print('Successfully parsed ICS content');
+          debugPrint('Successfully parsed ICS content');
 
-          print('Converting events...');
+          debugPrint('Converting events...');
           for (var event in calendar.data) {
             final type = event['type'] as String?;
-            print('Processing component of type: $type');
+            debugPrint('Processing component of type: $type');
 
             if (type == 'VEVENT') {
               final summary = event['summary'] as String?;
-              print('Processing event: $summary');
+              debugPrint('Processing event: $summary');
 
               // Parse dates with fallback to current time
               DateTime start;
@@ -143,9 +143,9 @@ class ICSImportService {
                 start = startIcs?.toDateTime() ?? DateTime.now();
                 end = endIcs?.toDateTime() ?? start.add(const Duration(hours: 1));
 
-                print('Parsed dates - Start: $start, End: $end');
+                debugPrint('Parsed dates - Start: $start, End: $end');
               } catch (e) {
-                print('Error parsing dates: $e');
+                debugPrint('Error parsing dates: $e');
                 start = DateTime.now();
                 end = start.add(const Duration(hours: 1));
               }
@@ -154,7 +154,7 @@ class ICSImportService {
                 id: _uuid.v4(),
                 title: summary ?? 'Untitled Event',
                 description: event['description'] as String? ?? '',
-                color: defaultCalendar.color.withAlpha(255),
+                colorValue: defaultCalendar.colorValue,
                 userId: defaultCalendar.userId,
                 calendarId: defaultCalendar.id,
                 start: start,
@@ -162,10 +162,10 @@ class ICSImportService {
               ));
             }
           }
-          print('Successfully processed ${events.length} events from file');
+          debugPrint('Successfully processed ${events.length} events from file');
         } catch (e, stackTrace) {
-          print('Error parsing ICS file: $e');
-          print('Stack trace: $stackTrace');
+          debugPrint('Error parsing ICS file: $e');
+          debugPrint('Stack trace: $stackTrace');
           // Continue with other files if one fails
           continue;
         }
@@ -177,8 +177,8 @@ class ICSImportService {
 
       return events;
     } catch (e, stackTrace) {
-      print('Error processing shared files: $e');
-      print('Stack trace: $stackTrace');
+      debugPrint('Error processing shared files: $e');
+      debugPrint('Stack trace: $stackTrace');
       rethrow;
     }
   }

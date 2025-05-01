@@ -1,4 +1,5 @@
 // lib/core/utils/supabase_utils.dart
+import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupabaseUtils {
@@ -43,28 +44,28 @@ class SupabaseUtils {
     try {
       // Instead of using a stored procedure, simply check if we can access the events table
       // If we can access it and no error occurs, the table exists
-      print('Checking if calendar_events table exists...');
+      debugPrint('Checking if calendar_events table exists...');
 
       try {
         await client.from(eventsTable).select('id').limit(1);
 
-        print('Calendar events table exists');
+        debugPrint('Calendar events table exists');
         // Table exists, no need to create it
         return;
       } catch (e) {
         // If the error is not about the table not existing, rethrow
         if (!e.toString().contains('does not exist')) {
-          print('Unexpected error: $e');
+          debugPrint('Unexpected error: $e');
           return;
         }
 
-        print('Table does not exist, would need to create it');
+        debugPrint('Table does not exist, would need to create it');
         // In a real scenario, we would create the table here
         // But for now, we'll just log that we need to create it,
         // since table creation typically requires admin privileges
       }
     } catch (e) {
-      print('Error in setupSupabaseTables: $e');
+      debugPrint('Error in setupSupabaseTables: $e');
       // Just log the error and continue - don't throw
       // throw Exception('Failed to set up Supabase tables: $e');
     }

@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_sync_calendar/core/services/hive_service.dart';
+import 'package:supabase_sync_calendar/core/services/sync_service.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/models/calendar_event_model.dart';
@@ -8,54 +11,96 @@ class CalendarRepository {
   final SupabaseClient supabaseClient;
   final String userId;
   final Uuid _uuid = const Uuid();
+  SyncService? _syncService;
+  final bool isOfflineMode;
 
   CalendarRepository({
     required this.supabaseClient,
     required this.userId,
-  });
+    this.isOfflineMode = false,
+  }) {
+    // Only initialize sync service if not in offline mode
+    if (!isOfflineMode) {
+      debugPrint('🌐 SUPABASE: Created CalendarRepository with client');
+      _syncService = SyncService(
+        supabaseClient: supabaseClient,
+        userId: userId,
+      );
 
-  Future<List<CalendarEventModel>> getEvents({String? calendarId}) async {
+      // Start auto-sync only in online mode
+      debugPrint('🌐 SUPABASE: Starting auto-sync service');
+      _syncService!.startAutoSync();
+    } else {
+      debugPrint('🔌 OFFLINE: Created CalendarRepository in offline mode - no sync service');
+    }
+  }
+
+  Future<List<CalendarEventModel>> getEvents({String? calendarId, bool fetchFromSupabaseIfEmpty = false}) async {
     try {
-      print(
-          'Fetching events for user: $userId, calendarId filter: ${calendarId ?? "none"}');
+      // First try to get events from local Hive storage
+      debugPrint('📋 LOCAL DB: Attempting to load events from Hive local storage');
+      List<CalendarEventModel> allEvents = HiveService.getAllEvents();
+      debugPrint('📋 LOCAL DB: Found ${allEvents.length} events in local storage (before user filtering)');
 
-      // First check if the table exists
-      try {
-        var query = supabaseClient
-            .from(SupabaseUtils.eventsTable)
-            .select()
-            .eq(SupabaseUtils.colUserId, userId);
+      // Filter for this user's events
+      allEvents = allEvents.where((e) => e.userId == userId).toList();
+      debugPrint('📋 LOCAL DB: Found ${allEvents.length} events for user $userId in local storage');
 
-        // Apply calendar filter if provided
-        if (calendarId != null) {
-          query = query.eq(SupabaseUtils.colCalendarId, calendarId);
-        }
+      List<CalendarEventModel> events;
 
-        final response = await query;
+      if (calendarId == null) {
+        // If no calendar ID is provided, return all events
+        debugPrint('📋 LOCAL DB: Getting all events from all calendars');
+        events = allEvents;
+      } else {
+        // If a calendar ID is provided, filter for that calendar
+        debugPrint('📋 LOCAL DB: Getting events for specific calendar: $calendarId');
+        events = allEvents.where((e) => e.calendarId == calendarId).toList();
+        debugPrint('📋 LOCAL DB: Found ${events.length} events for calendar $calendarId');
+      }
 
-        print('Successfully fetched ${response.length} events from database');
-        // Print sample event data for debugging
-        if (response.isNotEmpty) {
-          print('Sample event: ${response[0]}');
-        } else {
-          print('No events found in database');
-        }
+      // If no events found locally and fetchFromSupabaseIfEmpty is true and NOT in offline mode, try fetching from Supabase
+      if (events.isEmpty && fetchFromSupabaseIfEmpty && !isOfflineMode) {
+        debugPrint('🌐 SUPABASE: No events found in local storage. Trying to fetch from Supabase...');
+        try {
+          debugPrint('🌐 SUPABASE: Querying ${SupabaseUtils.eventsTable} table for user $userId');
+          final response = await supabaseClient.from(SupabaseUtils.eventsTable).select().eq(SupabaseUtils.colUserId, userId);
+          debugPrint('🌐 SUPABASE: Query completed, processing response');
 
-        return (response as List)
-            .map((eventJson) => CalendarEventModel.fromJson(eventJson))
-            .toList();
-      } catch (e) {
-        // Check if the error is about the table not existing
-        if (e.toString().contains('does not exist')) {
-          print('Events table does not exist, returning empty list');
-          return [];
-        } else {
-          print('Database error: $e');
+          if (calendarId != null) {
+            response.where((item) => item[SupabaseUtils.colCalendarId] == calendarId);
+          }
+
+          events = (response as List).map((json) => CalendarEventModel.fromJson(json)).toList();
+          debugPrint('🌐 SUPABASE: Converted ${events.length} events from JSON');
+
+          // Store events in Hive for offline access
+          debugPrint('📋 LOCAL DB: Saving ${events.length} events to local storage');
+          for (final event in events) {
+            await HiveService.saveEvent(event);
+          }
+
+          debugPrint('🌐 SUPABASE: Fetched ${events.length} events from Supabase');
+        } catch (e) {
+          debugPrint('❌ ERROR: Failed to fetch events from Supabase: $e');
+          if (e.toString().contains('does not exist')) {
+            // Table doesn't exist yet, return empty list
+            return [];
+          }
+          // For other errors, rethrow to be handled by caller
           rethrow;
         }
+      } else if (events.isEmpty && isOfflineMode) {
+        debugPrint('🔌 OFFLINE: No events found in local storage. Cannot fetch from Supabase in offline mode.');
+      } else if (events.isEmpty) {
+        debugPrint('ℹ️ INFO: No events found in local storage for user $userId. Skipping Supabase fetch as per configuration.');
+      } else {
+        debugPrint('✅ SUCCESS: Using ${events.length} events from local storage');
       }
+
+      return events;
     } catch (e) {
-      print('Error fetching events: $e');
+      debugPrint('Failed to load events: $e');
       throw Exception('Failed to load events: $e');
     }
   }
@@ -63,43 +108,30 @@ class CalendarRepository {
   // Create a new event
   Future<CalendarEventModel> createEvent(CalendarEventModel event) async {
     try {
-      print('Creating new event with title: ${event.title}');
-      final eventId = _uuid.v4();
+      final eventId = event.id.isEmpty ? _uuid.v4() : event.id;
       final newEvent = event.copyWith(id: eventId, userId: userId);
 
-      // First, check if the table exists
-      try {
-        // Attempt to create the table if it doesn't exist
-        print('Checking/creating calendar_events table');
-        await supabaseClient
-            .rpc('ensure_calendar_events_table')
-            .catchError((e) {
-          print('Could not create table via RPC: $e');
-          // This is expected if the RPC doesn't exist, just continue
-        });
+      // Save to Hive for local storage
+      await HiveService.saveEvent(newEvent);
 
-        // Insert the event data
-        print('Inserting event with ID: ${newEvent.id}');
-        final result = await supabaseClient
-            .from(SupabaseUtils.eventsTable)
-            .insert(newEvent.toJson())
-            .select();
-
-        print('Event created successfully');
-
-        // If we get here, the operation succeeded
-        return newEvent;
-      } catch (e) {
-        // If we get a specific error about table not existing
-        if (e.toString().contains('does not exist')) {
-          print('Table does not exist - need to create it first');
-          throw Exception(
-              'Table does not exist. Please set up the calendar_events table in Supabase first.');
+      // Only try to save to Supabase if not in offline mode
+      if (!isOfflineMode) {
+        try {
+          // Try to save to Supabase if online
+          await supabaseClient.from(SupabaseUtils.eventsTable).insert(newEvent.toJson());
+          debugPrint('🌐 SUPABASE: Event saved to Supabase');
+        } catch (e) {
+          // If saving to Supabase fails, the event is still in Hive
+          // and will be synced later by the SyncService
+          debugPrint('⚠️ WARNING: Event saved locally but not to Supabase: $e');
         }
-        rethrow;
+      } else {
+        debugPrint('🔌 OFFLINE: Event saved to local storage only');
       }
+
+      return newEvent;
     } catch (e) {
-      print('Error creating event: $e');
+      debugPrint('Failed to create event: $e');
       throw Exception('Failed to create event: $e');
     }
   }
@@ -107,14 +139,27 @@ class CalendarRepository {
   // Update an existing event
   Future<CalendarEventModel> updateEvent(CalendarEventModel event) async {
     try {
-      await supabaseClient
-          .from(SupabaseUtils.eventsTable)
-          .update(event.toJson())
-          .eq(SupabaseUtils.colId, event.id)
-          .eq(SupabaseUtils.colUserId, userId);
+      // Update in Hive for local storage
+      await HiveService.saveEvent(event);
+
+      // Only try to update in Supabase if not in offline mode
+      if (!isOfflineMode) {
+        try {
+          // Try to update in Supabase if online
+          await supabaseClient.from(SupabaseUtils.eventsTable).update(event.toJson()).eq(SupabaseUtils.colId, event.id);
+          debugPrint('🌐 SUPABASE: Event updated in Supabase');
+        } catch (e) {
+          // If updating in Supabase fails, the event is still updated in Hive
+          // and will be synced later by the SyncService
+          debugPrint('⚠️ WARNING: Event updated locally but not in Supabase: $e');
+        }
+      } else {
+        debugPrint('🔌 OFFLINE: Event updated in local storage only');
+      }
 
       return event;
     } catch (e) {
+      debugPrint('Failed to update event: $e');
       throw Exception('Failed to update event: $e');
     }
   }
@@ -122,13 +167,33 @@ class CalendarRepository {
   // Delete an event
   Future<void> deleteEvent(String eventId) async {
     try {
-      await supabaseClient
-          .from(SupabaseUtils.eventsTable)
-          .delete()
-          .eq(SupabaseUtils.colId, eventId)
-          .eq(SupabaseUtils.colUserId, userId);
+      // Delete from Hive for local storage
+      await HiveService.deleteEvent(eventId);
+
+      // Only try to delete from Supabase if not in offline mode
+      if (!isOfflineMode) {
+        try {
+          // Try to delete from Supabase if online
+          await supabaseClient.from(SupabaseUtils.eventsTable).delete().eq(SupabaseUtils.colId, eventId);
+          debugPrint('🌐 SUPABASE: Event deleted from Supabase');
+        } catch (e) {
+          // If deleting from Supabase fails, it's still deleted from Hive
+          // and will be synced later by the SyncService
+          debugPrint('⚠️ WARNING: Event deleted locally but not from Supabase: $e');
+        }
+      } else {
+        debugPrint('🔌 OFFLINE: Event deleted from local storage only');
+      }
     } catch (e) {
+      debugPrint('Failed to delete event: $e');
       throw Exception('Failed to delete event: $e');
     }
+  }
+
+  // Helper method to print unique calendar IDs for debugging
+  void _printUniqueCalendarIds(List<CalendarEventModel> events) {
+    final Set<String> uniqueCalendarIds = events.map((e) => e.calendarId).toSet();
+    final calendarIdsList = uniqueCalendarIds.toList()..sort();
+    debugPrint('📋 DIAGNOSTIC: Found ${uniqueCalendarIds.length} unique calendar IDs in events: ${calendarIdsList.join(', ')}');
   }
 }

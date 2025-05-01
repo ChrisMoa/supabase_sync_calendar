@@ -1,3 +1,4 @@
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -34,7 +35,7 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
   @override
   void initState() {
     super.initState();
-    print("CalendarManagementPage initialized");
+    debugPrint("CalendarManagementPage initialized");
     // Load calendars when page initializes
     context.read<CalendarManagementBloc>().add(const LoadCalendars());
   }
@@ -51,19 +52,17 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
           // Primary listener for state changes
           BlocListener<CalendarManagementBloc, CalendarManagementState>(
             listener: (context, state) {
-              print("State listener received: ${state.runtimeType}");
+              debugPrint("State listener received: ${state.runtimeType}");
 
               if (state is DeviceCalendarsAvailable) {
-                print(
-                    "HANDLING DeviceCalendarsAvailable in listener with ${state.deviceCalendars.length} calendars");
+                debugPrint("HANDLING DeviceCalendarsAvailable in listener with ${state.deviceCalendars.length} calendars");
                 // Use a post-frame callback to avoid build phase issues
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   _showDeviceCalendarSelectionDialog(state.deviceCalendars);
                 });
               }
             },
-            listenWhen: (previous, current) =>
-                current is DeviceCalendarsAvailable,
+            listenWhen: (previous, current) => current is DeviceCalendarsAvailable,
           ),
 
           // Listener for errors and notifications
@@ -80,18 +79,13 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
                 ErrorUtils.showErrorSnackBar(context, state.message);
               }
             },
-            listenWhen: (previous, current) =>
-                current is CalendarManagementError ||
-                current is CalendarSyncComplete ||
-                current is CalendarSyncError,
+            listenWhen: (previous, current) => current is CalendarManagementError || current is CalendarSyncComplete || current is CalendarSyncError,
           ),
         ],
         child: BlocBuilder<CalendarManagementBloc, CalendarManagementState>(
           buildWhen: (previous, current) {
             // Only rebuild for these specific states
-            return current is CalendarManagementLoading ||
-                current is CalendarManagementLoaded ||
-                current is CalendarSyncing;
+            return current is CalendarManagementLoading || current is CalendarManagementLoaded || current is CalendarSyncing;
           },
           builder: (context, state) {
             if (state is CalendarManagementLoading) {
@@ -107,8 +101,19 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
         ),
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _showAddCalendarOptions,
-        tooltip: 'Add Calendar',
+        onPressed: () {
+          showDialog(
+            context: context,
+            builder: (dialogContext) => CalendarEditDialog(
+              userId: widget.user.id, // Pass userId from widget
+              onSave: (calendar) {
+                // Correct: onSave provides the CalendarModel
+                context.read<CalendarManagementBloc>().add(AddCalendar(calendar));
+              },
+            ),
+          );
+        },
+        tooltip: 'Add New Calendar',
         child: const Icon(Icons.add),
       ),
     );
@@ -208,7 +213,7 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
   }
 
   void _showDeviceCalendarSelectionDialog(List<dynamic> deviceCalendars) {
-    print("SHOWING DIALOG for ${deviceCalendars.length} device calendars");
+    debugPrint("SHOWING DIALOG for ${deviceCalendars.length} device calendars");
 
     // Track selected calendars
     Set<dynamic> selectedCalendars = {};
@@ -232,16 +237,13 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
                       itemCount: deviceCalendars.length,
                       itemBuilder: (context, index) {
                         final deviceCalendar = deviceCalendars[index];
-                        final bool isSelected =
-                            selectedCalendars.contains(deviceCalendar);
+                        final bool isSelected = selectedCalendars.contains(deviceCalendar);
 
                         return CheckboxListTile(
-                          title:
-                              Text(deviceCalendar.name ?? 'Unnamed Calendar'),
+                          title: Text(deviceCalendar.name ?? 'Unnamed Calendar'),
                           value: isSelected,
                           onChanged: (bool? value) {
-                            print(
-                                "Calendar selection changed: ${deviceCalendar.name} - $value");
+                            debugPrint("Calendar selection changed: ${deviceCalendar.name} - $value");
                             setDialogState(() {
                               if (value == true) {
                                 selectedCalendars.add(deviceCalendar);
@@ -264,8 +266,7 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
               ),
               ElevatedButton(
                 onPressed: () {
-                  print(
-                      "Import button pressed for ${selectedCalendars.length} calendars");
+                  debugPrint("Import button pressed for ${selectedCalendars.length} calendars");
                   Navigator.pop(dialogContext);
                   _importSelectedDeviceCalendars(selectedCalendars.toList());
                 },
@@ -280,40 +281,40 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
 
   void _importSelectedDeviceCalendars(List<dynamic> selectedCalendars) {
     if (selectedCalendars.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('No calendars selected')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No calendars selected')));
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Importing ${selectedCalendars.length} calendars...')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Importing ${selectedCalendars.length} calendars...')));
 
     // Get a reference to the bloc
     final bloc = BlocProvider.of<CalendarManagementBloc>(context);
 
     // Process each selected calendar
     for (final deviceCalendar in selectedCalendars) {
-      print("Processing calendar: ${deviceCalendar.name}");
+      debugPrint("Processing calendar: ${deviceCalendar.name}");
 
-      // Create a calendar model for the device calendar
-      final newCalendar = CalendarModel(
-        id: _uuid.v4(),
-        name: deviceCalendar.name ?? 'Device Calendar',
-        color: deviceCalendar.color != null
-            ? Color(deviceCalendar.color!)
-            : Colors.blue,
-        userId: widget.user.id,
-        type: CalendarType.device,
-        deviceCalendarId: deviceCalendar.id,
+      // Import from device calendar
+      showDialog(
+        context: context,
+        builder: (dialogContext) => CalendarEditDialog(
+          // Prefill dialog with details from device calendar
+          calendar: CalendarModel(
+            id: const Uuid().v4(), // Generate new ID for our DB
+            name: deviceCalendar.name ?? 'Device Calendar',
+            colorValue: deviceCalendar.color != null ? Color(deviceCalendar.color!).value : Colors.blue.value,
+            userId: widget.user.id, // Use the current user ID
+            type: CalendarType.device,
+            deviceCalendarId: deviceCalendar.id, // Store original ID
+            isDefault: false,
+          ),
+          userId: widget.user.id, // Pass userId for saving logic
+          onSave: (newCalendar) {
+            // Save the newly configured calendar model
+            context.read<CalendarManagementBloc>().add(AddCalendar(newCalendar));
+          },
+        ),
       );
-
-      // Add the calendar
-      print("Adding calendar to bloc: ${newCalendar.name}");
-      bloc.add(AddCalendar(newCalendar));
-
-      // Sync the calendar
-      print("Syncing calendar: ${newCalendar.name}");
-      bloc.add(SyncDeviceCalendar(newCalendar));
     }
   }
 
@@ -324,10 +325,11 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
         calendar: CalendarModel(
           id: _uuid.v4(),
           name: '',
-          color: Colors.blue,
+          colorValue: Colors.blue.value,
           userId: widget.user.id,
           type: type,
         ),
+        userId: widget.user.id,
         onSave: (calendar) {
           context.read<CalendarManagementBloc>().add(AddCalendar(calendar));
         },
@@ -340,6 +342,7 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
       context: context,
       builder: (context) => CalendarEditDialog(
         calendar: calendar,
+        userId: widget.user.id,
         onSave: (updatedCalendar) {
           context.read<CalendarManagementBloc>().add(
                 UpdateCalendar(updatedCalendar),
@@ -408,18 +411,13 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
   void _syncCalendar(CalendarModel calendar) {
     switch (calendar.type) {
       case CalendarType.webdav:
-        context
-            .read<CalendarManagementBloc>()
-            .add(SyncWebDAVCalendar(calendar));
+        context.read<CalendarManagementBloc>().add(SyncWebDAVCalendar(calendar));
         break;
       case CalendarType.device:
-        context
-            .read<CalendarManagementBloc>()
-            .add(SyncDeviceCalendar(calendar));
+        context.read<CalendarManagementBloc>().add(SyncDeviceCalendar(calendar));
         break;
       default:
-        ErrorUtils.showErrorSnackBar(
-            context, 'This calendar type cannot be synced');
+        ErrorUtils.showErrorSnackBar(context, 'This calendar type cannot be synced');
     }
   }
 

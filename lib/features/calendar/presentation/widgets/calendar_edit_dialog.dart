@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_sync_calendar/core/models/calendar_model.dart';
+import 'package:uuid/uuid.dart';
 
 class CalendarEditDialog extends StatefulWidget {
   final CalendarModel? calendar; // Null for new calendar
   final Function(CalendarModel) onSave;
+  final String userId; // Add userId parameter
 
   const CalendarEditDialog({
     super.key,
     this.calendar,
     required this.onSave,
+    required this.userId, // Make userId required
   });
 
   @override
@@ -40,9 +43,8 @@ class _CalendarEditDialogState extends State<CalendarEditDialog> {
     super.initState();
     // Initialize with provided calendar or defaults
     _nameController = TextEditingController(text: widget.calendar?.name ?? '');
-    _syncUrlController =
-        TextEditingController(text: widget.calendar?.syncUrl ?? '');
-    _selectedColor = widget.calendar?.color ?? _availableColors.first;
+    _syncUrlController = TextEditingController(text: widget.calendar?.syncUrl ?? '');
+    _selectedColor = widget.calendar != null ? Color(widget.calendar!.colorValue) : _availableColors.first;
     _selectedType = widget.calendar?.type ?? CalendarType.local;
     _isDefault = widget.calendar?.isDefault ?? false;
   }
@@ -142,9 +144,7 @@ class _CalendarEditDialogState extends State<CalendarEditDialog> {
                           color: color,
                           shape: BoxShape.circle,
                           border: Border.all(
-                            color: _selectedColor == color
-                                ? Colors.black
-                                : Colors.transparent,
+                            color: _selectedColor == color ? Colors.black : Colors.transparent,
                             width: 2,
                           ),
                         ),
@@ -194,8 +194,7 @@ class _CalendarEditDialogState extends State<CalendarEditDialog> {
       return;
     }
 
-    if (_selectedType == CalendarType.webdav &&
-        _syncUrlController.text.trim().isEmpty) {
+    if (_selectedType == CalendarType.webdav && _syncUrlController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please enter a WebDAV URL'),
@@ -204,23 +203,22 @@ class _CalendarEditDialogState extends State<CalendarEditDialog> {
       return;
     }
 
-    final calendar = (widget.calendar ??
-            CalendarModel(
-              id: '',
-              name: '',
-              color: Colors.blue,
-              userId: '',
-              type: CalendarType.local,
-            ))
-        .copyWith(
-      name: _nameController.text.trim(),
-      color: _selectedColor,
-      type: _selectedType,
-      isDefault: _isDefault,
-      syncUrl: _selectedType == CalendarType.webdav
-          ? _syncUrlController.text.trim()
-          : null,
-    );
+    final calendar = widget.calendar?.copyWith(
+          name: _nameController.text.trim(),
+          type: _selectedType,
+          syncUrl: _selectedType == CalendarType.webdav ? _syncUrlController.text.trim() : null,
+          colorValue: _selectedColor.value,
+          isDefault: _isDefault,
+        ) ??
+        CalendarModel(
+          userId: widget.userId,
+          id: const Uuid().v4(),
+          name: _nameController.text.trim(),
+          type: _selectedType,
+          syncUrl: _selectedType == CalendarType.webdav ? _syncUrlController.text.trim() : null,
+          colorValue: _selectedColor.value,
+          isDefault: _isDefault,
+        );
 
     widget.onSave(calendar);
     Navigator.of(context).pop();

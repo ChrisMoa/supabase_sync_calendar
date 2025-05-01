@@ -14,14 +14,12 @@ class DeviceCalendarService {
       // Check permissions
       var permissionsGranted = await _deviceCalendarPlugin.hasPermissions();
       if (permissionsGranted.data == null || permissionsGranted.data == false) {
-        print('No calendar permissions, requesting...');
+        debugPrint('No calendar permissions, requesting...');
         permissionsGranted = await _deviceCalendarPlugin.requestPermissions();
 
-        if (permissionsGranted.data == null ||
-            permissionsGranted.data == false) {
-          print('Calendar permissions denied by user');
-          throw Exception(
-              'Calendar access denied. Please enable calendar permissions in your device settings.');
+        if (permissionsGranted.data == null || permissionsGranted.data == false) {
+          debugPrint('Calendar permissions denied by user');
+          throw Exception('Calendar access denied. Please enable calendar permissions in your device settings.');
         }
       }
 
@@ -33,24 +31,21 @@ class DeviceCalendarService {
         // Debug each calendar for troubleshooting
         for (int i = 0; i < calendars.length; i++) {
           final calendar = calendars[i];
-          print(
-              "Device calendar $i: id=${calendar.id}, name=${calendar.name}, color=${calendar.color}");
+          debugPrint("Device calendar $i: id=${calendar.id}, name=${calendar.name}, color=${calendar.color}");
         }
         return calendars;
       } else {
-        print('Failed to get calendars: ${calendarsResult.errors.toString()}');
-        throw Exception(
-            'Failed to retrieve device calendars: ${calendarsResult.errors.toString()}');
+        debugPrint('Failed to get calendars: ${calendarsResult.errors.toString()}');
+        throw Exception('Failed to retrieve device calendars: ${calendarsResult.errors.toString()}');
       }
     } catch (e) {
-      print('Error getting device calendars: $e');
+      debugPrint('Error getting device calendars: $e');
       throw Exception('Failed to access device calendars: $e');
     }
   }
 
   // Convert device calendars to CalendarModel
-  List<CalendarModel> convertToCalendarModels(
-      List<Calendar> deviceCalendars, String userId) {
+  List<CalendarModel> convertToCalendarModels(List<Calendar> deviceCalendars, String userId) {
     final List<CalendarModel> calendars = [];
     final List<Color> defaultColors = [
       Colors.blue,
@@ -63,17 +58,16 @@ class DeviceCalendarService {
 
     for (int i = 0; i < deviceCalendars.length; i++) {
       final deviceCalendar = deviceCalendars[i];
-      final Color color = deviceCalendar.color != null
-          ? Color(deviceCalendar.color!)
-          : defaultColors[i % defaultColors.length];
+      final Color color = deviceCalendar.color != null ? Color(deviceCalendar.color!) : defaultColors[i % defaultColors.length];
 
       calendars.add(CalendarModel(
         id: _uuid.v4(),
         name: deviceCalendar.name ?? 'Unknown Calendar',
-        color: color,
+        colorValue: deviceCalendar.color != null ? color.value : defaultColors[i % defaultColors.length].value,
         userId: userId,
         type: CalendarType.device,
         deviceCalendarId: deviceCalendar.id,
+        isDefault: deviceCalendar.isDefault ?? false,
       ));
     }
 
@@ -81,10 +75,8 @@ class DeviceCalendarService {
   }
 
   // Sync events from a device calendar
-  Future<List<CalendarEventModel>> syncDeviceCalendar(CalendarModel calendar,
-      {DateTime? startDate, DateTime? endDate}) async {
-    if (calendar.type != CalendarType.device ||
-        calendar.deviceCalendarId == null) {
+  Future<List<CalendarEventModel>> syncDeviceCalendar(CalendarModel calendar, {DateTime? startDate, DateTime? endDate}) async {
+    if (calendar.type != CalendarType.device || calendar.deviceCalendarId == null) {
       throw Exception('Not a device calendar or missing device calendar ID');
     }
 
@@ -114,26 +106,41 @@ class DeviceCalendarService {
   }
 
   // Convert device events to CalendarEventModel
-  List<CalendarEventModel> _convertDeviceEvents(
-      List<Event> deviceEvents, CalendarModel calendar) {
+  List<CalendarEventModel> _convertDeviceEvents(List<Event> deviceEvents, CalendarModel calendar) {
     final events = <CalendarEventModel>[];
 
     for (final deviceEvent in deviceEvents) {
       // Skip events with missing required data
       if (deviceEvent.start == null || deviceEvent.end == null) continue;
 
-      events.add(CalendarEventModel(
-        id: deviceEvent.eventId ?? _uuid.v4(),
-        title: deviceEvent.title ?? 'Untitled Event',
-        description: deviceEvent.description ?? '',
-        start: deviceEvent.start!,
-        end: deviceEvent.end!,
-        color: calendar.color,
-        userId: calendar.userId,
-        calendarId: calendar.id,
-        wholeDay: deviceEvent.allDay ?? false,
-        isExternalReadOnly: true, // Mark as read-only since it's from device
-      ));
+      // Extract reminder time if available
+      DateTime? reminderTime;
+      if (deviceEvent.reminders?.isNotEmpty ?? false) {
+        // Assuming we take the first reminder in minutes
+        final minutes = deviceEvent.reminders!.first.minutes;
+        if (minutes != null) {
+          reminderTime = deviceEvent.start?.subtract(Duration(minutes: minutes));
+        }
+      }
+
+      events.add(
+        CalendarEventModel(
+          id: deviceEvent.eventId ?? const Uuid().v4(), // Use device ID or generate
+          title: deviceEvent.title ?? 'Untitled Event',
+          description: deviceEvent.description ?? '',
+          start: deviceEvent.start ?? DateTime.now(), // Provide default
+          end: deviceEvent.end ?? (deviceEvent.start ?? DateTime.now()).add(const Duration(hours: 1)), // Provide default
+          calendarId: calendar.id, // Link to our internal calendar ID
+          wholeDay: deviceEvent.allDay ?? false,
+          reminder: reminderTime, // Use extracted reminder time
+          // Use colorValue from parent CalendarModel
+          colorValue: calendar.colorValue,
+          // Assume events from device calendar are not read-only by default in our app
+          // unless the source calendar itself was marked read-only (which we don't store directly)
+          isExternalReadOnly: false,
+          userId: calendar.userId,
+        ),
+      );
     }
 
     return events;

@@ -27,19 +27,23 @@ import 'package:uuid/uuid.dart';
 
 import '../../../auth/domain/blocs/custom_auth_bloc/custom_auth_bloc.dart';
 import '../../../auth/domain/blocs/custom_auth_bloc/custom_auth_event.dart';
+import '../../../auth/domain/blocs/custom_auth_bloc/custom_auth_state.dart';
 import '../../../auth/presentation/pages/login_page.dart';
 import '../../domain/blocs/calendar_bloc/calendar_bloc.dart';
 import '../../domain/blocs/calendar_bloc/calendar_event.dart';
 import '../../domain/blocs/calendar_bloc/calendar_state.dart';
+import '../../../../core/services/network_service.dart';
 
 class CalendarDashboardPage extends StatefulWidget {
   final SupabaseClient supabaseClient;
   final User user;
+  final bool isOfflineMode;
 
   const CalendarDashboardPage({
     super.key,
     required this.supabaseClient,
     required this.user,
+    this.isOfflineMode = false,
   });
 
   @override
@@ -52,14 +56,15 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
   @override
   void initState() {
     super.initState();
-    print('CalendarDashboardPage initState');
+    debugPrint('CalendarDashboardPage initState - Offline mode: ${widget.isOfflineMode}');
     // Use a post-frame callback to initialize after first render
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      print('Initializing calendar bloc from initState');
+      debugPrint('Initializing calendar bloc from initState');
       // Initialize the calendar with the Supabase client and user
       context.read<CalendarBloc>().add(CalendarInitialize(
             supabaseClient: widget.supabaseClient,
             userId: widget.user.id,
+            isOfflineMode: widget.isOfflineMode,
           ));
     });
     if (Platform.isAndroid || Platform.isLinux) {
@@ -70,6 +75,11 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
 
   @override
   Widget build(BuildContext context) {
+    // No need for this since we're passing isOfflineMode directly to the widget
+    // final authState = context.read<CustomAuthBloc>().state;
+    // final isOfflineMode = authState is AuthAuthenticated && authState.isOfflineMode;
+    final isOfflineMode = widget.isOfflineMode;
+
     return MultiBlocProvider(
       providers: [
         // Add EventSeriesBloc
@@ -77,6 +87,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
           create: (context) => EventSeriesBloc(
             supabaseClient: widget.supabaseClient,
             userId: widget.user.id,
+            isOfflineMode: isOfflineMode,
           ),
         ),
       ],
@@ -85,7 +96,28 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
           title: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('Calendar Dashboard'),
+              Row(
+                children: [
+                  const Text('Calendar Dashboard'),
+                  if (isOfflineMode)
+                    Container(
+                      margin: const EdgeInsets.only(left: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.orange,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text(
+                        'OFFLINE',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
               Text(
                 'User: ${widget.user.email}',
                 style: const TextStyle(
@@ -103,6 +135,11 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
               icon: const Icon(Icons.calendar_view_day),
               tooltip: 'Manage Calendars',
             ),
+            IconButton(
+              onPressed: _syncWithSupabase,
+              icon: const Icon(Icons.sync),
+              tooltip: 'Sync with Supabase',
+            ),
             _buildViewSelector(),
             IconButton(
               onPressed: _logout,
@@ -112,6 +149,16 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
             PopupMenuButton(
               icon: const Icon(Icons.more_vert),
               itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'sync',
+                  child: Row(
+                    children: [
+                      Icon(Icons.sync, size: 20),
+                      SizedBox(width: 8),
+                      Text('Sync with Supabase'),
+                    ],
+                  ),
+                ),
                 const PopupMenuItem(
                   value: 'logout',
                   child: Row(
@@ -126,6 +173,8 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
               onSelected: (value) {
                 if (value == 'logout') {
                   _logout();
+                } else if (value == 'sync') {
+                  _syncWithSupabase();
                 }
               },
             ),
@@ -133,7 +182,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
         ),
         body: BlocConsumer<CalendarBloc, CalendarState>(
           listener: (context, state) {
-            print('Calendar state changed: ${state.runtimeType}');
+            debugPrint('Calendar state changed: ${state.runtimeType}');
 
             if (state is CalendarError) {
               SchedulerBinding.instance.addPostFrameCallback((_) {
@@ -147,31 +196,32 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
             }
           },
           builder: (context, state) {
-            print('Building UI for calendar state: ${state.runtimeType}');
+            debugPrint('Building UI for calendar state: ${state.runtimeType}');
             if (state is CalendarLoading) {
               return const LoadingIndicator(message: 'Loading your calendar events...');
             } else if (state is CalendarLoaded) {
-              print('Building calendar with ${state.events.length} events');
+              debugPrint('Building calendar with ${state.events.length} events');
               if (state.events.isEmpty) {
-                print('WARNING: No events to display in calendar');
+                debugPrint('WARNING: No events to display in calendar');
               } else {
                 // Debug the first few events
                 final count = state.events.length > 3 ? 3 : state.events.length;
                 for (int i = 0; i < count; i++) {
                   final e = state.events[i];
-                  print('Event $i: ${e.title}, ${e.start}-${e.end}, color: ${e.color}');
+                  debugPrint('Event $i: ${e.title}, ${e.start}-${e.end}, color: ${e.color}');
                 }
                 context.read<CalendarManagementBloc>().add(const LoadCalendars());
               }
               return _buildCalendar(state);
             } else {
-              print('Initializing calendar...');
+              debugPrint('Initializing calendar...');
               // Instead of showing loading, initialize the bloc
               if (state is CalendarInitial) {
-                print('Initializing calendar bloc with user ID: ${widget.user.id}');
+                debugPrint('Initializing calendar bloc with user ID: ${widget.user.id}');
                 context.read<CalendarBloc>().add(CalendarInitialize(
                       supabaseClient: widget.supabaseClient,
                       userId: widget.user.id,
+                      isOfflineMode: widget.isOfflineMode,
                     ));
               }
               return const LoadingIndicator(message: 'Initializing calendar...');
@@ -188,7 +238,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
   }
 
   Widget _buildCalendar(CalendarLoaded state) {
-    print('Building SfCalendarWidget with ${state.events.length} events and viewType: ${state.calendarViewType}');
+    debugPrint('Building SfCalendarWidget with ${state.events.length} events and viewType: ${state.calendarViewType}');
 
     // Ensure CalendarManagementBloc is available to SfCalendarWidget
     return BlocProvider<CalendarManagementBloc>(
@@ -297,10 +347,10 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
 
     // Add special listener for device calendars directly to the bloc
     calendarManagementBloc.stream.listen((state) {
-      print("State observed outside build context: ${state.runtimeType}");
+      debugPrint("State observed outside build context: ${state.runtimeType}");
 
       if (state is DeviceCalendarsAvailable && state.deviceCalendars.isNotEmpty) {
-        print("DeviceCalendarsAvailable detected outside widget");
+        debugPrint("DeviceCalendarsAvailable detected outside widget");
 
         // Show dialog outside of build context
         showDialog(
@@ -350,14 +400,14 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
                   itemBuilder: (context, index) {
                     final deviceCalendar = deviceCalendars[index];
                     // Print calendar details for debugging
-                    print("Calendar $index: name=${deviceCalendar.name}, id=${deviceCalendar.id}");
+                    debugPrint("Calendar $index: name=${deviceCalendar.name}, id=${deviceCalendar.id}");
 
                     return CheckboxListTile(
                       title: Text(deviceCalendar.name ?? 'Unnamed Calendar'),
                       subtitle: Text(deviceCalendar.id ?? ''),
                       value: selectedStates[index],
                       onChanged: (bool? value) {
-                        print("Selection changed for calendar ${deviceCalendar.name}: $value");
+                        debugPrint("Selection changed for calendar ${deviceCalendar.name}: $value");
                         setState(() {
                           selectedStates[index] = value ?? false;
                         });
@@ -386,7 +436,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
                 }
               }
 
-              print("Selected ${selectedCalendars.length} calendars");
+              debugPrint("Selected ${selectedCalendars.length} calendars");
 
               // Process each selected calendar
               _processSelectedCalendars(selectedCalendars, bloc);
@@ -413,24 +463,24 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
     // Process each calendar
     for (int i = 0; i < selectedCalendars.length; i++) {
       final deviceCalendar = selectedCalendars[i];
-      print("Processing device calendar: name=${deviceCalendar.name}, id=${deviceCalendar.id}");
+      debugPrint("Processing device calendar: name=${deviceCalendar.name}, id=${deviceCalendar.id}");
 
       // Create a new calendar model
       final newCalendar = CalendarModel(
         id: uuid.v4(),
         name: deviceCalendar.name ?? 'Device Calendar',
-        color: deviceCalendar.color != null ? Color(deviceCalendar.color) : Colors.primaries[i % Colors.primaries.length],
+        colorValue: deviceCalendar.color != null ? Color(deviceCalendar.color).value : Colors.primaries[i % Colors.primaries.length].value,
         userId: widget.user.id,
         type: CalendarType.device,
         deviceCalendarId: deviceCalendar.id,
       );
 
       // Add the calendar
-      print("Adding calendar: ${newCalendar.name} with ID ${newCalendar.id}");
+      debugPrint("Adding calendar: ${newCalendar.name} with ID ${newCalendar.id}");
       bloc.add(AddCalendar(newCalendar));
 
       // Sync the calendar
-      print("Syncing calendar: ${newCalendar.name}");
+      debugPrint("Syncing calendar: ${newCalendar.name}");
       bloc.add(SyncDeviceCalendar(newCalendar));
     }
   }
@@ -509,7 +559,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
         CalendarModel(
           id: 'default',
           name: 'Default Calendar',
-          color: Colors.blue,
+          colorValue: Colors.blue.value,
           userId: widget.user.id,
           type: CalendarType.local,
           isDefault: true,
@@ -534,7 +584,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
             description: description,
             start: start,
             end: end,
-            color: color,
+            colorValue: color.value,
             userId: widget.user.id,
             calendarId: calendarId,
             wholeDay: wholeDay,
@@ -636,12 +686,12 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
       final event = state.events.firstWhere(
         (event) => event.id == eventId,
         orElse: () => CalendarEventModel(
-          id: eventId,
-          title: 'Event',
+          id: 'placeholder',
+          title: 'Placeholder',
           description: '',
           start: DateTime.now(),
           end: DateTime.now().add(const Duration(hours: 1)),
-          color: Colors.blue,
+          colorValue: Colors.transparent.value, // Transparent placeholder
           userId: widget.user.id,
           calendarId: 'default',
           appendixes: const [],
@@ -792,7 +842,39 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
 
     // Handle files shared while the app is running
     FlutterSharingIntent.instance.getMediaStream().listen((List<SharedFile> value) {
-      print('Media stream: $value');
+      debugPrint('Media stream: $value');
     });
+  }
+
+  void _syncWithSupabase() async {
+    // Check network connectivity first
+    final networkService = NetworkService();
+    final isOnline = await networkService.isOnline;
+
+    if (!isOnline) {
+      // Show offline message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot sync while offline. Please check your internet connection.'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    // Show loading indicator
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Syncing with Supabase...'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+
+    // Load calendars with explicit flag to fetch from Supabase
+    context.read<CalendarManagementBloc>().add(const LoadCalendars(fetchFromSupabaseIfEmpty: true));
+
+    // Force refresh calendar events with explicit flag to fetch from Supabase
+    context.read<CalendarBloc>().add(const CalendarRefresh());
   }
 }

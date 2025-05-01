@@ -32,21 +32,22 @@ class CredentialsLoaded extends CustomAuthState {
   });
 
   @override
-  List<Object> get props =>
-      [supabaseUrl, supabaseApiKey, email, password, hasBeenLoggedInBefore];
+  List<Object> get props => [supabaseUrl, supabaseApiKey, email, password, hasBeenLoggedInBefore];
 }
 
 class AuthAuthenticated extends CustomAuthState {
   final User user;
   final SupabaseClient supabaseClient;
+  final bool isOfflineMode;
 
   const AuthAuthenticated({
     required this.user,
     required this.supabaseClient,
+    this.isOfflineMode = false,
   });
 
   @override
-  List<Object> get props => [user, supabaseClient];
+  List<Object> get props => [user, supabaseClient, isOfflineMode];
 }
 
 class AuthUnauthenticated extends CustomAuthState {

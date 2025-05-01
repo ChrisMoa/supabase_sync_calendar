@@ -11,7 +11,12 @@ abstract class CalendarManagementEvent extends Equatable {
 }
 
 class LoadCalendars extends CalendarManagementEvent {
-  const LoadCalendars();
+  final bool fetchFromSupabaseIfEmpty;
+
+  const LoadCalendars({this.fetchFromSupabaseIfEmpty = false});
+
+  @override
+  List<Object> get props => [fetchFromSupabaseIfEmpty];
 }
 
 class AddCalendar extends CalendarManagementEvent {
