@@ -5,6 +5,7 @@ import 'package:supabase_sync_calendar/core/models/calendar_event_series_model.d
 import 'package:supabase_sync_calendar/core/models/calendar_model.dart';
 import 'package:crypto/crypto.dart';
 import 'package:convert/convert.dart';
+import 'package:flutter/foundation.dart';
 
 // The generated files are included via 'part' directives in their respective models,
 // so direct imports here are not needed and cause errors.
@@ -69,7 +70,8 @@ class HiveService {
 
   // Initialize Hive with encryption key (derived from user password)
   static Future<void> init(String encryptionKey) async {
-    await Hive.initFlutter();
+    // Initialize Hive with a specific path for this app
+    await Hive.initFlutter('supabase_sync_calendar');
 
     // Register adapters
     // The adapter classes (e.g., CalendarModelAdapter) are defined in the .g.dart files,
@@ -95,10 +97,26 @@ class HiveService {
   // User data methods
   static Future<void> saveUserData(String userId, Map<String, dynamic> userData) async {
     final box = Hive.box(_userBox);
-    await box.put(userId, userData);
+    // Convert all maps to Maps with String keys to ensure consistent retrieval
+    final Map<String, dynamic> processedData = {};
+
+    userData.forEach((key, value) {
+      if (value is Map) {
+        // Convert nested maps to ensure string keys
+        final Map<String, dynamic> stringMap = {};
+        (value as Map).forEach((k, v) {
+          stringMap[k.toString()] = v;
+        });
+        processedData[key] = stringMap;
+      } else {
+        processedData[key] = value;
+      }
+    });
+
+    await box.put(userId, processedData);
   }
 
-  static Map<String, dynamic>? getUserData(String userId) {
+  static dynamic getUserData(String userId) {
     final box = Hive.box(_userBox);
     return box.get(userId);
   }
@@ -130,12 +148,16 @@ class HiveService {
 
   static List<CalendarModel> getAllCalendars() {
     final box = getCalendarBox();
-    return box.values.cast<CalendarModel>().toList();
+    final allCalendars = box.values.cast<CalendarModel>().toList();
+    debugPrint('📋 HIVE: getAllCalendars() - Found ${allCalendars.length} calendars in box');
+    return allCalendars;
   }
 
   static CalendarModel? getCalendar(String calendarId) {
     final box = getCalendarBox();
-    return box.get(calendarId);
+    final calendar = box.get(calendarId);
+    debugPrint('📋 HIVE: getCalendar($calendarId) - ${calendar != null ? 'Found' : 'Not found'}');
+    return calendar;
   }
 
   static Future<void> deleteCalendar(String calendarId) async {
@@ -155,17 +177,24 @@ class HiveService {
 
   static List<CalendarEventModel> getAllEvents() {
     final box = getEventBox();
-    return box.values.cast<CalendarEventModel>().toList();
+    final allEvents = box.values.cast<CalendarEventModel>().toList();
+    debugPrint('📋 HIVE: getAllEvents() - Found ${allEvents.length} events in box');
+    return allEvents;
   }
 
   static List<CalendarEventModel> getEventsByCalendar(String calendarId) {
     final box = getEventBox();
-    return box.values.cast<CalendarEventModel>().where((event) => event.calendarId == calendarId).toList();
+    final allEvents = box.values.cast<CalendarEventModel>().toList();
+    final filteredEvents = allEvents.where((event) => event.calendarId == calendarId).toList();
+    debugPrint('📋 HIVE: getEventsByCalendar($calendarId) - Found ${filteredEvents.length} events for this calendar (of ${allEvents.length} total)');
+    return filteredEvents;
   }
 
   static CalendarEventModel? getEvent(String eventId) {
     final box = getEventBox();
-    return box.get(eventId);
+    final event = box.get(eventId);
+    debugPrint('📋 HIVE: getEvent($eventId) - ${event != null ? 'Found' : 'Not found'}');
+    return event;
   }
 
   static Future<void> deleteEvent(String eventId) async {
@@ -183,14 +212,28 @@ class HiveService {
     await markForSync('series', series.id);
   }
 
+  // Alias for saveSeries to match the method names expected in other files
+  static Future<void> saveEventSeries(CalendarEventSeriesModel series) async {
+    await saveSeries(series);
+  }
+
   static List<CalendarEventSeriesModel> getAllSeries() {
     final box = getSeriesBox();
-    return box.values.cast<CalendarEventSeriesModel>().toList();
+    final allSeries = box.values.cast<CalendarEventSeriesModel>().toList();
+    debugPrint('📋 HIVE: getAllSeries() - Found ${allSeries.length} series in box');
+    return allSeries;
   }
 
   static CalendarEventSeriesModel? getSeries(String seriesId) {
     final box = getSeriesBox();
-    return box.get(seriesId);
+    final series = box.get(seriesId);
+    debugPrint('📋 HIVE: getSeries($seriesId) - ${series != null ? 'Found' : 'Not found'}');
+    return series;
+  }
+
+  // Alias for getSeries to match the method names expected in other files
+  static CalendarEventSeriesModel? getEventSeries(String seriesId) {
+    return getSeries(seriesId);
   }
 
   static Future<void> deleteSeries(String seriesId) async {
@@ -198,6 +241,29 @@ class HiveService {
     await box.delete(seriesId);
     // Mark for sync (deletion)
     await markForSync('series_delete', seriesId);
+  }
+
+  // Alias for deleteSeries to match the method names expected in other files
+  static Future<void> deleteEventSeries(String seriesId) async {
+    await deleteSeries(seriesId);
+  }
+
+  // Delete all events belonging to a series
+  static Future<void> deleteSeriesEvents(String seriesId) async {
+    final box = getEventBox();
+    final allEvents = box.values.cast<CalendarEventModel>().toList();
+
+    // Find all events with this series ID
+    final seriesEvents = allEvents.where((event) => event.seriesId == seriesId).toList();
+
+    // Delete each event
+    for (final event in seriesEvents) {
+      await box.delete(event.id);
+      // Mark for sync (deletion)
+      await markForSync('event_delete', event.id);
+    }
+
+    debugPrint('📋 HIVE: deleteSeriesEvents($seriesId) - Deleted ${seriesEvents.length} events');
   }
 
   // Sync tracking methods

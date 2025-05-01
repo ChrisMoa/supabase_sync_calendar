@@ -4,27 +4,32 @@ import 'package:uuid/uuid.dart';
 import '../../../../core/models/calendar_event_model.dart';
 import '../../../../core/models/calendar_event_series_model.dart';
 import '../../../../core/utils/supabase_utils.dart';
+import '../../../../core/services/hive_service.dart';
 
 class EventSeriesRepository {
   final SupabaseClient supabaseClient;
   final String userId;
   final Uuid _uuid = const Uuid();
+  final bool isOfflineMode;
 
   EventSeriesRepository({
     required this.supabaseClient,
     required this.userId,
+    this.isOfflineMode = false,
   });
 
   // Create a new event series
-  Future<CalendarEventSeriesModel> createSeries(
-      CalendarEventSeriesModel series) async {
+  Future<CalendarEventSeriesModel> createSeries(CalendarEventSeriesModel series) async {
     try {
       final String seriesId = series.id.isEmpty ? _uuid.v4() : series.id;
       final newSeries = series.copyWith(id: seriesId, userId: userId);
 
-      await supabaseClient
-          .from(SupabaseUtils.seriesTable)
-          .insert(newSeries.toJson());
+      if (!isOfflineMode) {
+        await supabaseClient.from(SupabaseUtils.seriesTable).insert(newSeries.toJson());
+      }
+
+      // Always save to local storage
+      await HiveService.saveEventSeries(newSeries);
 
       return newSeries;
     } catch (e) {
@@ -35,28 +40,36 @@ class EventSeriesRepository {
   // Get an event series by ID
   Future<CalendarEventSeriesModel> getSeriesById(String seriesId) async {
     try {
-      final response = await supabaseClient
-          .from(SupabaseUtils.seriesTable)
-          .select()
-          .eq(SupabaseUtils.colId, seriesId)
-          .eq(SupabaseUtils.colUserId, userId)
-          .single();
+      if (isOfflineMode) {
+        final seriesData = HiveService.getEventSeries(seriesId);
+        if (seriesData != null) {
+          return seriesData;
+        }
+        throw Exception('Event series not found in local storage');
+      }
 
-      return CalendarEventSeriesModel.fromJson(response);
+      final response = await supabaseClient.from(SupabaseUtils.seriesTable).select().eq(SupabaseUtils.colId, seriesId).eq(SupabaseUtils.colUserId, userId).single();
+
+      final series = CalendarEventSeriesModel.fromJson(response);
+
+      // Save to local storage for offline access
+      await HiveService.saveEventSeries(series);
+
+      return series;
     } catch (e) {
       throw Exception('Failed to get event series: $e');
     }
   }
 
   // Update an event series
-  Future<CalendarEventSeriesModel> updateSeries(
-      CalendarEventSeriesModel series) async {
+  Future<CalendarEventSeriesModel> updateSeries(CalendarEventSeriesModel series) async {
     try {
-      await supabaseClient
-          .from(SupabaseUtils.seriesTable)
-          .update(series.toJson())
-          .eq(SupabaseUtils.colId, series.id)
-          .eq(SupabaseUtils.colUserId, userId);
+      if (!isOfflineMode) {
+        await supabaseClient.from(SupabaseUtils.seriesTable).update(series.toJson()).eq(SupabaseUtils.colId, series.id).eq(SupabaseUtils.colUserId, userId);
+      }
+
+      // Always update in local storage
+      await HiveService.saveEventSeries(series);
 
       return series;
     } catch (e) {
@@ -67,29 +80,25 @@ class EventSeriesRepository {
   // Delete an event series
   Future<void> deleteSeries(String seriesId, {bool deleteEvents = true}) async {
     try {
-      // Start a transaction
-      if (deleteEvents) {
-        // Delete all events in the series
-        await supabaseClient
-            .from(SupabaseUtils.eventsTable)
-            .delete()
-            .eq(SupabaseUtils.colSeriesId, seriesId)
-            .eq(SupabaseUtils.colUserId, userId);
-      } else {
-        // Just remove the series_id from events (keep events)
-        await supabaseClient
-            .from(SupabaseUtils.eventsTable)
-            .update({SupabaseUtils.colSeriesId: null})
-            .eq(SupabaseUtils.colSeriesId, seriesId)
-            .eq(SupabaseUtils.colUserId, userId);
+      if (!isOfflineMode) {
+        // Start a transaction
+        if (deleteEvents) {
+          // Delete all events in the series
+          await supabaseClient.from(SupabaseUtils.eventsTable).delete().eq(SupabaseUtils.colSeriesId, seriesId).eq(SupabaseUtils.colUserId, userId);
+        } else {
+          // Just remove the series_id from events (keep events)
+          await supabaseClient.from(SupabaseUtils.eventsTable).update({SupabaseUtils.colSeriesId: null}).eq(SupabaseUtils.colSeriesId, seriesId).eq(SupabaseUtils.colUserId, userId);
+        }
+
+        // Delete the series itself
+        await supabaseClient.from(SupabaseUtils.seriesTable).delete().eq(SupabaseUtils.colId, seriesId).eq(SupabaseUtils.colUserId, userId);
       }
 
-      // Delete the series itself
-      await supabaseClient
-          .from(SupabaseUtils.seriesTable)
-          .delete()
-          .eq(SupabaseUtils.colId, seriesId)
-          .eq(SupabaseUtils.colUserId, userId);
+      // Delete from local storage too
+      if (deleteEvents) {
+        await HiveService.deleteSeriesEvents(seriesId);
+      }
+      await HiveService.deleteEventSeries(seriesId);
     } catch (e) {
       throw Exception('Failed to delete event series: $e');
     }
@@ -118,35 +127,27 @@ class EventSeriesRepository {
       events.add(updatedTemplate);
 
       // Calculate event duration to maintain it for all occurrences
-      final Duration eventDuration =
-          templateEvent.end.difference(templateEvent.start);
+      final Duration eventDuration = templateEvent.end.difference(templateEvent.start);
 
       // Set up range constraints
       final DateTime actualRangeStart = rangeStart ?? templateEvent.start;
-      final DateTime actualRangeEnd = rangeEnd ??
-          (series.endType == SeriesEndType.onDate
-              ? series.endDate!
-              : actualRangeStart
-                  .add(const Duration(days: 365))); // Default to 1 year
+      final DateTime actualRangeEnd = rangeEnd ?? (series.endType == SeriesEndType.onDate ? series.endDate! : actualRangeStart.add(const Duration(days: 365))); // Default to 1 year
 
       final int templateHour = templateEvent.start.hour;
       final int templateMinute = templateEvent.start.minute;
       final int templateSecond = templateEvent.start.second;
       // Now handle the recurring weeks based on interval
       // Start from the week after the template's week
-      DateTime nextWeekStart = _getStartOfWeek(templateEvent.start)
-          .add(Duration(days: 7 * series.repeatInterval));
+      DateTime nextWeekStart = _getStartOfWeek(templateEvent.start).add(Duration(days: 7 * series.repeatInterval));
 
       // For weekly recurrences with specific days
-      if (series.repeatType == SeriesRepeatType.weekly &&
-          series.repeatDaysOfWeek.isNotEmpty) {
+      if (series.repeatType == SeriesRepeatType.weekly && series.repeatDaysOfWeek.isNotEmpty) {
         // Sort days to ensure correct order
         final sortedDays = List<int>.from(series.repeatDaysOfWeek)..sort();
 
         // Filter out the template's weekday if it's in the list, to avoid duplication
         final templateWeekday = templateEvent.start.weekday;
-        final daysToGenerate =
-            sortedDays.where((day) => day != templateWeekday).toList();
+        final daysToGenerate = sortedDays.where((day) => day != templateWeekday).toList();
 
         // Generate the initial set of events for the first week
         // (for the selected days other than the template day)
@@ -181,18 +182,11 @@ class EventSeriesRepository {
           }
         }
 
-        int occurrenceCount =
-            1 + daysToGenerate.length; // Count template + first week events
-        final int maxOccurrences =
-            series.endType == SeriesEndType.afterOccurrences
-                ? series.occurrences!
-                : 1000; // Reasonable limit for infinite series
+        int occurrenceCount = 1 + daysToGenerate.length; // Count template + first week events
+        final int maxOccurrences = series.endType == SeriesEndType.afterOccurrences ? series.occurrences! : 1000; // Reasonable limit for infinite series
 
         // Loop through weeks based on the interval
-        while (nextWeekStart.isBefore(actualRangeEnd) &&
-            occurrenceCount < maxOccurrences &&
-            !(series.endType == SeriesEndType.onDate &&
-                nextWeekStart.isAfter(series.endDate!))) {
+        while (nextWeekStart.isBefore(actualRangeEnd) && occurrenceCount < maxOccurrences && !(series.endType == SeriesEndType.onDate && nextWeekStart.isAfter(series.endDate!))) {
           // For each week, add events for all specified days
           for (final weekday in sortedDays) {
             // Calculate the date for this weekday in this week
@@ -207,14 +201,12 @@ class EventSeriesRepository {
             );
 
             // Skip if before range start or after range end
-            if (eventDate.isBefore(actualRangeStart) ||
-                eventDate.isAfter(actualRangeEnd)) {
+            if (eventDate.isBefore(actualRangeStart) || eventDate.isAfter(actualRangeEnd)) {
               continue;
             }
 
             // Skip if we've reached the end date
-            if (series.endType == SeriesEndType.onDate &&
-                eventDate.isAfter(series.endDate!)) {
+            if (series.endType == SeriesEndType.onDate && eventDate.isAfter(series.endDate!)) {
               continue;
             }
 
@@ -232,15 +224,13 @@ class EventSeriesRepository {
             occurrenceCount++;
 
             // Check if we've reached the max occurrences
-            if (series.endType == SeriesEndType.afterOccurrences &&
-                occurrenceCount >= series.occurrences!) {
+            if (series.endType == SeriesEndType.afterOccurrences && occurrenceCount >= series.occurrences!) {
               break;
             }
           }
 
           // Move to the next week based on interval
-          nextWeekStart =
-              nextWeekStart.add(Duration(days: 7 * series.repeatInterval));
+          nextWeekStart = nextWeekStart.add(Duration(days: 7 * series.repeatInterval));
         }
       } else {
         // Handle other recurrence types (daily, monthly, yearly)
@@ -253,16 +243,10 @@ class EventSeriesRepository {
         );
 
         int occurrenceCount = 1; // Count the template event as first occurrence
-        final int maxOccurrences =
-            series.endType == SeriesEndType.afterOccurrences
-                ? series.occurrences!
-                : 1000; // Reasonable limit for infinite series
+        final int maxOccurrences = series.endType == SeriesEndType.afterOccurrences ? series.occurrences! : 1000; // Reasonable limit for infinite series
 
         // Generate occurrences
-        while (nextStart.isBefore(actualRangeEnd) &&
-            occurrenceCount < maxOccurrences &&
-            !(series.endType == SeriesEndType.onDate &&
-                nextStart.isAfter(series.endDate!))) {
+        while (nextStart.isBefore(actualRangeEnd) && occurrenceCount < maxOccurrences && !(series.endType == SeriesEndType.onDate && nextStart.isAfter(series.endDate!))) {
           // Create the event with updated dates
           final DateTime nextEnd = nextStart.add(eventDuration);
 

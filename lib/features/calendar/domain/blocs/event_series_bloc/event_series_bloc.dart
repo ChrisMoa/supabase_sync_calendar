@@ -12,18 +12,23 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
   final EventSeriesRepository _seriesRepository;
   final CalendarRepository _eventRepository;
   final Uuid _uuid = const Uuid();
+  final bool _isOfflineMode;
 
   EventSeriesBloc({
-    required SupabaseClient supabaseClient,
+    required SupabaseClient? supabaseClient,
     required String userId,
+    bool isOfflineMode = false,
   })  : _seriesRepository = EventSeriesRepository(
-          supabaseClient: supabaseClient,
+          supabaseClient: supabaseClient ?? SupabaseClient('', ''),
           userId: userId,
+          isOfflineMode: isOfflineMode,
         ),
         _eventRepository = CalendarRepository(
-          supabaseClient: supabaseClient,
+          supabaseClient: supabaseClient ?? SupabaseClient('', ''),
           userId: userId,
+          isOfflineMode: isOfflineMode,
         ),
+        _isOfflineMode = isOfflineMode,
         super(const EventSeriesInitial()) {
     on<LoadEventSeries>(_onLoadEventSeries);
     on<CreateEventSeries>(_onCreateEventSeries);

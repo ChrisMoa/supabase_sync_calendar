@@ -14,18 +14,25 @@ abstract class CalendarEvent extends Equatable {
 class CalendarInitialize extends CalendarEvent {
   final SupabaseClient supabaseClient;
   final String userId;
+  final bool isOfflineMode;
 
   const CalendarInitialize({
     required this.supabaseClient,
     required this.userId,
+    this.isOfflineMode = false,
   });
 
   @override
-  List<Object> get props => [supabaseClient, userId];
+  List<Object> get props => [supabaseClient, userId, isOfflineMode];
 }
 
 class CalendarLoadEvents extends CalendarEvent {
-  const CalendarLoadEvents();
+  final bool fetchFromSupabaseIfEmpty;
+
+  const CalendarLoadEvents({this.fetchFromSupabaseIfEmpty = false});
+
+  @override
+  List<Object> get props => [fetchFromSupabaseIfEmpty];
 }
 
 class CalendarAddEvent extends CalendarEvent {
@@ -108,9 +115,17 @@ class CalendarSyncEvent extends CalendarEvent {
 
 class CalendarFilterByCalendar extends CalendarEvent {
   final String? calendarId; // Null means show all calendars
+  final bool fetchFromSupabaseIfEmpty;
 
-  const CalendarFilterByCalendar(this.calendarId);
+  const CalendarFilterByCalendar(this.calendarId, {this.fetchFromSupabaseIfEmpty = false});
 
   @override
-  List<Object> get props => calendarId != null ? [calendarId!] : [];
+  List<Object> get props => [
+        if (calendarId != null) calendarId!,
+        fetchFromSupabaseIfEmpty,
+      ];
+}
+
+class CalendarRefresh extends CalendarEvent {
+  const CalendarRefresh();
 }

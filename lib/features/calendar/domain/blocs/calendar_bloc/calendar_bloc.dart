@@ -26,29 +26,35 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
     on<CalendarChangeView>(_onChangeView);
     on<CalendarSyncEvent>(_onSyncEvent);
     on<CalendarFilterByCalendar>(_onFilterByCalendar);
+    on<CalendarRefresh>(_onRefresh);
   }
 
   void _onInitialize(
     CalendarInitialize event,
     Emitter<CalendarState> emit,
   ) {
-    debugPrint('Initializing calendar with user ID: ${event.userId}');
+    debugPrint('Initializing calendar with user ID: ${event.userId}' + (event.isOfflineMode ? ' in OFFLINE mode' : ''));
 
     _repository = CalendarRepository(
       supabaseClient: event.supabaseClient,
       userId: event.userId,
+      isOfflineMode: event.isOfflineMode,
     );
 
-    // Set up real-time sync
-    _syncService = DatabaseSyncService(
-      supabaseClient: event.supabaseClient,
-      userId: event.userId,
-      onEventAdded: (event) => add(CalendarSyncEvent.added(event)),
-      onEventUpdated: (event) => add(CalendarSyncEvent.updated(event)),
-      onEventDeleted: (id) => add(CalendarSyncEvent.deleted(id)),
-    );
+    // Set up real-time sync only if not in offline mode
+    if (!event.isOfflineMode) {
+      _syncService = DatabaseSyncService(
+        supabaseClient: event.supabaseClient,
+        userId: event.userId,
+        onEventAdded: (event) => add(CalendarSyncEvent.added(event)),
+        onEventUpdated: (event) => add(CalendarSyncEvent.updated(event)),
+        onEventDeleted: (id) => add(CalendarSyncEvent.deleted(id)),
+      );
 
-    _syncService?.startSync();
+      _syncService?.startSync();
+    } else {
+      debugPrint('🔌 OFFLINE: Skipping real-time sync service initialization');
+    }
 
     emit(const CalendarLoading());
     add(const CalendarLoadEvents());
@@ -68,7 +74,11 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         return;
       }
 
-      final events = await _repository!.getEvents().catchError((e) {
+      final events = await _repository!
+          .getEvents(
+        fetchFromSupabaseIfEmpty: event.fetchFromSupabaseIfEmpty,
+      )
+          .catchError((e) {
         debugPrint('Error loading events: $e');
         // If there's an error (like table doesn't exist), return empty list
         return <CalendarEventModel>[];
@@ -299,7 +309,9 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
 
     try {
       // If calendarId is null, show all events
-      final events = event.calendarId == null ? await _repository!.getEvents() : await _repository!.getEvents(calendarId: event.calendarId);
+      final events = event.calendarId == null
+          ? await _repository!.getEvents(fetchFromSupabaseIfEmpty: event.fetchFromSupabaseIfEmpty)
+          : await _repository!.getEvents(calendarId: event.calendarId, fetchFromSupabaseIfEmpty: event.fetchFromSupabaseIfEmpty);
 
       emit(CalendarLoaded(
         events: events,
@@ -315,6 +327,14 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         emit(currentState);
       });
     }
+  }
+
+  void _onRefresh(
+    CalendarRefresh event,
+    Emitter<CalendarState> emit,
+  ) {
+    debugPrint('Manual refresh triggered');
+    add(const CalendarLoadEvents(fetchFromSupabaseIfEmpty: true));
   }
 
   // Generate sample events for testing

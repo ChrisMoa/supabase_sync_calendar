@@ -27,6 +27,15 @@ class CalendarSelector extends StatelessWidget {
           builder: (context, calendarState) {
             final activeCalendarId = calendarState.activeCalendarFilter;
 
+            // Debug print available calendars
+            debugPrint('📋 CALENDAR SELECTOR: Available calendars:');
+            for (var cal in calendars) {
+              debugPrint('📋 CALENDAR: ID=${cal.id}, Name=${cal.name}, Default=${cal.isDefault}');
+            }
+
+            // Debug active calendar
+            debugPrint('📋 CALENDAR SELECTOR: Active calendar ID: $activeCalendarId');
+
             return PopupMenuButton<String?>(
               icon: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -46,8 +55,15 @@ class CalendarSelector extends StatelessWidget {
                 ],
               ),
               onSelected: (calendarId) {
+                debugPrint('📋 CALENDAR SELECTOR: Selected calendar ID: $calendarId');
+
+                // If calendar ID matches one of our event calendars, use it
+                // (see debug output for correct IDs)
                 context.read<CalendarBloc>().add(
-                      CalendarFilterByCalendar(calendarId),
+                      CalendarFilterByCalendar(
+                        calendarId,
+                        fetchFromSupabaseIfEmpty: false,
+                      ),
                     );
               },
               itemBuilder: (context) => [

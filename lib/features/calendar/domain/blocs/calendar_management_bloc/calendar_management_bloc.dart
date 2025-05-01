@@ -20,21 +20,25 @@ class CalendarManagementBloc extends Bloc<CalendarManagementEvent, CalendarManag
   final DeviceCalendarService _deviceService = DeviceCalendarService();
   final ICSImportService _icsImportService = ICSImportService();
   final CalendarBloc? calendarBloc;
+  final bool isOfflineMode;
 
   CalendarManagementBloc({
-    required SupabaseClient supabaseClient,
+    required SupabaseClient? supabaseClient,
     required String userId,
     this.calendarBloc,
+    this.isOfflineMode = false,
   })  : _calendarRepo = CalendarManagementRepository(
-          supabaseClient: supabaseClient,
+          supabaseClient: supabaseClient ?? SupabaseClient('', ''),
           userId: userId,
+          isOfflineMode: isOfflineMode,
         ),
         _eventRepo = CalendarRepository(
-          supabaseClient: supabaseClient,
+          supabaseClient: supabaseClient ?? SupabaseClient('', ''),
           userId: userId,
+          isOfflineMode: isOfflineMode,
         ),
         super(const CalendarManagementInitial()) {
-    debugPrint('CalendarManagementBloc initialized');
+    debugPrint('CalendarManagementBloc initialized' + (isOfflineMode ? ' in offline mode' : ''));
 
     on<LoadCalendars>((event, emit) {
       debugPrint('LoadCalendars event handler called');
@@ -75,11 +79,15 @@ class CalendarManagementBloc extends Bloc<CalendarManagementEvent, CalendarManag
     emit(const CalendarManagementLoading());
 
     try {
-      // Ensure there's a default calendar
-      final defaultCalendar = await _calendarRepo.ensureDefaultCalendar();
+      // Ensure there's a default calendar - this should only fetch from Supabase if explicitly requested
+      final defaultCalendar = await _calendarRepo.ensureDefaultCalendar(
+        fetchFromSupabaseIfEmpty: event.fetchFromSupabaseIfEmpty,
+      );
 
       // Load all calendars
-      final calendars = await _calendarRepo.getCalendars();
+      final calendars = await _calendarRepo.getCalendars(
+        fetchFromSupabaseIfEmpty: event.fetchFromSupabaseIfEmpty,
+      );
 
       emit(CalendarManagementLoaded(
         calendars: calendars,

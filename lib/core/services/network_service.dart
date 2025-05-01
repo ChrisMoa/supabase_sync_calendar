@@ -48,6 +48,12 @@ class NetworkService {
   Future<bool> get isOnline async {
     try {
       final result = await _connectivity.checkConnectivity();
+
+      // Log detailed connectivity results for debugging
+      for (var res in result) {
+        debugPrint('🌐 NETWORK: Detected connectivity type: $res');
+      }
+
       return result.isNotEmpty && !result.every((res) => res == ConnectivityResult.none || res == ConnectivityResult.bluetooth);
     } catch (e) {
       debugPrint('Error checking connectivity: $e');

@@ -123,17 +123,18 @@ class CalendarModel extends Equatable {
       calendarType = CalendarType.local;
     }
 
+    // Check for both camelCase and snake_case versions of fields to support both formats
     return CalendarModel(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? 'Unnamed Calendar',
       colorValue: colorValue,
-      userId: json['userId'] as String? ?? '',
+      userId: json['userId'] as String? ?? json['user_id'] as String? ?? '', // Check both formats
       type: calendarType,
-      isDefault: json['isDefault'] as bool? ?? false,
-      syncUrl: json['syncUrl'] as String?,
-      deviceCalendarId: json['deviceCalendarId'] as String?,
-      lastSynced: json['lastSynced'] != null ? DateTime.parse(json['lastSynced'] as String) : DateTime.now(),
-      isSynced: json['isSynced'] as bool? ?? false,
+      isDefault: json['isDefault'] as bool? ?? json['is_default'] as bool? ?? false, // Check both formats
+      syncUrl: json['syncUrl'] as String? ?? json['sync_url'] as String?, // Check both formats
+      deviceCalendarId: json['deviceCalendarId'] as String? ?? json['device_calendar_id'] as String?, // Check both formats
+      lastSynced: json['lastSynced'] != null ? DateTime.parse(json['lastSynced'] as String) : (json['last_synced'] != null ? DateTime.parse(json['last_synced'] as String) : DateTime.now()),
+      isSynced: json['isSynced'] as bool? ?? json['is_synced'] as bool? ?? false, // Check both formats
     );
   }
 
@@ -144,25 +145,20 @@ class CalendarModel extends Equatable {
       'id': id,
       'name': name,
       'color': colorValue, // Use 'color' instead of 'colorValue' for compatibility
-      'userId': userId,
+      'user_id': userId, // Use 'user_id' instead of 'userId' for Supabase compatibility
       'type': type.index,
+      'is_default': isDefault, // Add is_default to sync this field with Supabase
     };
 
     // Only include optional fields if they're supported by the Supabase schema
     // These fields might not exist in the Supabase database
     if (syncUrl != null) {
-      json['syncUrl'] = syncUrl;
+      json['sync_url'] = syncUrl; // Use snake_case for Supabase
     }
 
     if (deviceCalendarId != null) {
-      json['deviceCalendarId'] = deviceCalendarId;
+      json['device_calendar_id'] = deviceCalendarId; // Use snake_case for Supabase
     }
-
-    // These are added for local use only - don't sync to Supabase
-    // They can be managed internally by the app
-    // json['isDefault'] = isDefault;
-    // json['lastSynced'] = lastSynced.toIso8601String();
-    // json['isSynced'] = isSynced;
 
     return json;
   }
