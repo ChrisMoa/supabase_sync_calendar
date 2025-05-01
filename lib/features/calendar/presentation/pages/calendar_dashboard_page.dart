@@ -21,7 +21,6 @@ import 'package:supabase_sync_calendar/features/calendar/presentation/pages/cale
 import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/calendar_selector.dart';
 import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/event_edit_dialog.dart';
 import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/event_series_dialog.dart';
-import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/ics_import_dialog.dart';
 import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/sf_calendar_widget.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
 import 'package:uuid/uuid.dart';
@@ -63,7 +62,10 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
             userId: widget.user.id,
           ));
     });
-    _initializeFileHandling();
+    if (Platform.isAndroid || Platform.isLinux) {
+      // init file handling on mobile devices
+      _initializeFileHandling();
+    }
   }
 
   @override
