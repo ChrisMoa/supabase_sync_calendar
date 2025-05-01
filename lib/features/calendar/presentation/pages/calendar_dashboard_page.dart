@@ -88,9 +88,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
           ),
           backgroundColor: Theme.of(context).colorScheme.inversePrimary,
           actions: [
-            // Add calendar selector
             const CalendarSelector(),
-            // Add calendar management button
             IconButton(
               onPressed: _navigateToCalendarManagement,
               icon: const Icon(Icons.calendar_view_day),
@@ -101,6 +99,26 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
               onPressed: _logout,
               icon: const Icon(Icons.logout),
               tooltip: 'Logout',
+            ),
+            PopupMenuButton(
+              icon: const Icon(Icons.more_vert),
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'logout',
+                  child: Row(
+                    children: [
+                      Icon(Icons.logout, size: 20),
+                      SizedBox(width: 8),
+                      Text('Logout'),
+                    ],
+                  ),
+                ),
+              ],
+              onSelected: (value) {
+                if (value == 'logout') {
+                  _logout();
+                }
+              },
             ),
           ],
         ),
@@ -136,6 +154,9 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
                   print(
                       'Event $i: ${e.title}, ${e.start}-${e.end}, color: ${e.color}');
                 }
+                context
+                    .read<CalendarManagementBloc>()
+                    .add(const LoadCalendars());
               }
               return _buildCalendar(state);
             } else {

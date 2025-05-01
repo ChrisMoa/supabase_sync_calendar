@@ -198,6 +198,7 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
                 onTap: () {
                   Navigator.pop(context);
                   _showImportICSDialog();
+                  // ICSFilePicker.pickAndImportICS(context);
                 },
               ),
             ],

@@ -21,6 +21,7 @@ dependencies:
   icalendar_parser: ^2.1.0
   device_calendar: ^4.3.3
   file_picker: ^10.1.2
+  flutter_file_dialog: ^3.0.2
 
 dev_dependencies:
   flutter_test:

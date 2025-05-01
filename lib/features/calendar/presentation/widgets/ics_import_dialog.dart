@@ -1,8 +1,8 @@
 import 'dart:io';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_file_dialog/flutter_file_dialog.dart';
 import 'package:supabase_sync_calendar/core/models/calendar_model.dart';
 import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_management_bloc/calendar_management_bloc.dart';
 import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_management_bloc/calendar_management_event.dart';
@@ -10,11 +10,13 @@ import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_m
 class ICSImportDialog extends StatefulWidget {
   final List<CalendarModel> calendars;
   final CalendarModel? defaultCalendar;
+  final File? preselectedFile; // Add this parameter
 
   const ICSImportDialog({
     super.key,
     required this.calendars,
     this.defaultCalendar,
+    this.preselectedFile, // Add this parameter
   });
 
   @override
@@ -23,7 +25,8 @@ class ICSImportDialog extends StatefulWidget {
 
 class _ICSImportDialogState extends State<ICSImportDialog> {
   String? _selectedCalendarId;
-  PlatformFile? _selectedFile;
+  File? _selectedFile;
+  File? _directFile; // Add this field for direct file handling
   bool _isLoading = false;
 
   @override
@@ -32,6 +35,11 @@ class _ICSImportDialogState extends State<ICSImportDialog> {
     // Initialize with default calendar
     _selectedCalendarId = widget.defaultCalendar?.id ??
         (widget.calendars.isNotEmpty ? widget.calendars.first.id : null);
+
+    // Set preselected file if provided
+    if (widget.preselectedFile != null) {
+      _directFile = widget.preselectedFile;
+    }
   }
 
   @override
@@ -101,11 +109,11 @@ class _ICSImportDialogState extends State<ICSImportDialog> {
             children: [
               Expanded(
                 child: Text(_selectedFile != null
-                    ? 'Selected: ${_selectedFile!.name}'
+                    ? 'Selected: ${_selectedFile!.path}'
                     : 'No file selected'),
               ),
               ElevatedButton.icon(
-                onPressed: _pickFile,
+                onPressed: _selectFile,
                 icon: const Icon(Icons.file_upload),
                 label: const Text('Select ICS File'),
               ),
@@ -135,36 +143,28 @@ class _ICSImportDialogState extends State<ICSImportDialog> {
     );
   }
 
-  Future<void> _pickFile() async {
-    try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['ics'],
-      );
-
-      if (result != null && result.files.isNotEmpty) {
-        setState(() {
-          _selectedFile = result.files.first;
-        });
-      }
-    } catch (e) {
-      // Show error message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error selecting file: $e')),
-      );
+  Future<void> _selectFile() async {
+    final file = (await FlutterFileDialog.pickFile());
+    if (file != null) {
+      setState(() {
+        _selectedFile = File(file);
+      });
     }
   }
 
   Future<void> _importFile() async {
-    if (_selectedFile == null || _selectedCalendarId == null) return;
-
     setState(() {
       _isLoading = true;
     });
 
     try {
       // Get the file
-      final file = File(_selectedFile!.path!);
+      File file;
+      if (_directFile != null) {
+        file = _directFile!;
+      } else {
+        file = File(_selectedFile!.path);
+      }
 
       // Import the file
       context.read<CalendarManagementBloc>().add(

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:icalendar_parser/icalendar_parser.dart';
 import 'package:supabase_sync_calendar/core/models/calendar_event_model.dart';
 import 'package:supabase_sync_calendar/core/models/calendar_model.dart';
+import 'package:supabase_sync_calendar/core/utils/event_checker.dart';
 import 'package:uuid/uuid.dart';
 
 class ICSImportService {
@@ -32,7 +33,7 @@ class ICSImportService {
     CalendarModel calendar,
   ) async {
     try {
-      // Read file content
+      // Read file content1
       final icsContent = await icsFile.readAsString();
       return importFromString(icsContent, calendar);
     } catch (e) {
@@ -65,25 +66,24 @@ class ICSImportService {
       if (event['dtstart'] != null) {
         if (event['dtstart'] is DateTime) {
           start = event['dtstart'] as DateTime;
-        } else if (event['dtstart'] is Map &&
-            event['dtstart']['value'] is DateTime) {
-          start = event['dtstart']['value'] as DateTime;
-          // Check if it's a date-only value (all-day event)
-          isAllDay = event['dtstart']['params']?['value'] == 'DATE';
+        } else if (event['dtstart'] is IcsDateTime) {
+          final ev = event['dtstart'] as IcsDateTime;
+          start = DateTime.tryParse(ev.dt);
         }
       }
 
       if (event['dtend'] != null) {
         if (event['dtend'] is DateTime) {
           end = event['dtend'] as DateTime;
-        } else if (event['dtend'] is Map &&
-            event['dtend']['value'] is DateTime) {
-          end = event['dtend']['value'] as DateTime;
+        } else if (event['dtend'] is IcsDateTime) {
+          final ev = event['dtend'] as IcsDateTime;
+          end = DateTime.tryParse(ev.dt);
         }
       }
 
       // Skip events with missing required data
       if (start == null || end == null) continue;
+      isAllDay = EventChecker.isCompleteDay(start, end);
 
       events.add(CalendarEventModel(
         id: uid,

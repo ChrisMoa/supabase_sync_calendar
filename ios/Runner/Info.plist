@@ -47,24 +47,45 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
-	<key>CFBundleDocumentTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeExtensions</key>
-			<array>
-			<string>ics</string>
-			</array>
-			<key>CFBundleTypeName</key>
-			<string>iCalendar File</string>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-			<key>LSHandlerRank</key>
-			<string>Owner</string>
-			<key>LSItemContentTypes</key>
-			<array>
-			<string>com.apple.ical-event</string>
-			</array>
-		</dict>
-	</array>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>iCalendar</string>
+            <key>LSHandlerRank</key>
+            <string>Alternate</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>com.apple.ical.ics</string>
+                <string>public.calendar-event</string>
+            </array>
+        </dict>
+    </array>
+    
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+                <string>public.content</string>
+            </array>
+            <key>UTTypeDescription</key>
+            <string>iCalendar File</string>
+            <key>UTTypeIdentifier</key>
+            <string>com.apple.ical.ics</string>
+            <key>UTTypeTagSpecification</key>
+            <dict>
+                <key>public.filename-extension</key>
+                <array>
+                    <string>ics</string>
+                </array>
+                <key>public.mime-type</key>
+                <array>
+                    <string>text/calendar</string>
+                </array>
+            </dict>
+        </dict>
+    </array>
 </dict>
 </plist>

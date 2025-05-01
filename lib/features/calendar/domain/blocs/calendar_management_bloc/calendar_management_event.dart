@@ -73,8 +73,8 @@ class ImportDeviceCalendars extends CalendarManagementEvent {
 }
 
 class ImportICSFile extends CalendarManagementEvent {
-  final String calendarId; // The calendar to import events into
-  final File icsFile; // The ICS file to import
+  final String calendarId;
+  final File icsFile;
 
   const ImportICSFile({
     required this.calendarId,
