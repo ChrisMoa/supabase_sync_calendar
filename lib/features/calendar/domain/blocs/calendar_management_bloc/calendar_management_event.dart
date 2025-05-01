@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:equatable/equatable.dart';
 import 'package:supabase_sync_calendar/core/models/calendar_model.dart';
 
@@ -68,4 +70,30 @@ class SyncDeviceCalendar extends CalendarManagementEvent {
 
 class ImportDeviceCalendars extends CalendarManagementEvent {
   const ImportDeviceCalendars();
+}
+
+class ImportICSFile extends CalendarManagementEvent {
+  final String calendarId;
+  final File icsFile;
+
+  const ImportICSFile({
+    required this.calendarId,
+    required this.icsFile,
+  });
+
+  @override
+  List<Object> get props => [calendarId, icsFile];
+}
+
+class ImportICSContent extends CalendarManagementEvent {
+  final String calendarId; // The calendar to import events into
+  final String icsContent; // The ICS content to import
+
+  const ImportICSContent({
+    required this.calendarId,
+    required this.icsContent,
+  });
+
+  @override
+  List<Object> get props => [calendarId, icsContent];
 }

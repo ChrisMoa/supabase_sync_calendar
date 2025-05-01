@@ -9,6 +9,7 @@ import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_m
 import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_management_bloc/calendar_management_state.dart';
 import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/calendar_edit_dialog.dart';
 import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/calendar_list_item.dart';
+import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/ics_import_dialog.dart';
 import 'package:uuid/uuid.dart';
 
 class CalendarManagementPage extends StatefulWidget {
@@ -188,6 +189,15 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
                 onTap: () {
                   Navigator.pop(context);
                   widget.onImportDeviceCalendars(); // Use the callback instead
+                },
+              ),
+              // Add this new option
+              ListTile(
+                leading: const Icon(Icons.file_upload),
+                title: const Text('Import ICS File'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showImportICSDialog();
                 },
               ),
             ],
@@ -410,6 +420,25 @@ class _CalendarManagementPageState extends State<CalendarManagementPage> {
       default:
         ErrorUtils.showErrorSnackBar(
             context, 'This calendar type cannot be synced');
+    }
+  }
+
+  void _showImportICSDialog() {
+    final state = context.read<CalendarManagementBloc>().state;
+
+    if (state is CalendarManagementLoaded) {
+      showDialog(
+        context: context,
+        builder: (context) => ICSImportDialog(
+          calendars: state.calendars,
+          defaultCalendar: state.defaultCalendar,
+        ),
+      );
+    } else {
+      // Show error if calendars not loaded
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please wait for calendars to load')),
+      );
     }
   }
 }

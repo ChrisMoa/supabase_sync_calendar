@@ -60,13 +60,13 @@ class ErrorUtils {
   /// Show a success snackbar
   static void showSuccessSnackBar(BuildContext context, String message) {
     // This method should now only be called in a safe context (not during build)
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    // ScaffoldMessenger.of(context).showSnackBar(
+    //   SnackBar(
+    //     content: Text(message),
+    //     backgroundColor: Colors.green,
+    //     behavior: SnackBarBehavior.floating,
+    //     duration: const Duration(seconds: 2),
+    //   ),
+    // );
   }
 }

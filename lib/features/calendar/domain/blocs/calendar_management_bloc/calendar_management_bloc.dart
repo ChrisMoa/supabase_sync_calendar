@@ -1,6 +1,9 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:supabase_sync_calendar/core/models/calendar_model.dart';
+import 'package:supabase_sync_calendar/core/services/ics_import_service.dart';
+import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_bloc/calendar_bloc.dart';
+import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_bloc/calendar_event.dart';
 
 import '../../../data/repositories/calendar_management_repository.dart';
 import '../../../data/repositories/calendar_repository.dart';
@@ -15,10 +18,13 @@ class CalendarManagementBloc
   final CalendarRepository _eventRepo;
   final WebDAVCalendarService _webdavService = WebDAVCalendarService();
   final DeviceCalendarService _deviceService = DeviceCalendarService();
+  final ICSImportService _icsImportService = ICSImportService();
+  final CalendarBloc? calendarBloc;
 
   CalendarManagementBloc({
     required SupabaseClient supabaseClient,
     required String userId,
+    this.calendarBloc,
   })  : _calendarRepo = CalendarManagementRepository(
           supabaseClient: supabaseClient,
           userId: userId,
@@ -52,6 +58,8 @@ class CalendarManagementBloc
     on<SetDefaultCalendar>(_onSetDefaultCalendar);
     on<SyncWebDAVCalendar>(_onSyncWebDAVCalendar);
     on<ImportDeviceCalendars>(_onImportDeviceCalendars);
+    on<ImportICSFile>(_onImportICSFile);
+    on<ImportICSContent>(_onImportICSContent);
   }
 
   // Override add method to trace events
@@ -158,7 +166,9 @@ class CalendarManagementBloc
       // Update each event with the new calendar color
       for (final event in events) {
         final updatedEvent = event.copyWith(color: calendar.color);
-        await _eventRepo.updateEvent(updatedEvent);
+        if (calendarBloc != null) {
+          calendarBloc!.add(CalendarUpdateEvent(updatedEvent));
+        }
       }
 
       print(
@@ -354,6 +364,76 @@ class CalendarManagementBloc
     // Delete each event
     for (final event in calendarEvents) {
       await _eventRepo.deleteEvent(event.id);
+    }
+  }
+
+  Future<void> _onImportICSFile(
+    ImportICSFile event,
+    Emitter<CalendarManagementState> emit,
+  ) async {
+    emit(CalendarSyncing(event.calendarId));
+
+    try {
+      // Find the calendar by ID
+      final calendars = await _calendarRepo.getCalendars();
+      final calendar = calendars.firstWhere(
+        (cal) => cal.id == event.calendarId,
+        orElse: () => throw Exception('Calendar not found'),
+      );
+
+      // Import events from the ICS file
+      final importedEvents = await _icsImportService.importFromFile(
+        event.icsFile,
+        calendar,
+      );
+
+      // Save events to the repository
+      for (final event in importedEvents) {
+        await _eventRepo.createEvent(event);
+      }
+
+      emit(CalendarSyncComplete(event.calendarId, importedEvents.length));
+
+      // Reload calendars
+      add(const LoadCalendars());
+    } catch (e) {
+      emit(
+          CalendarSyncError(event.calendarId, 'Failed to import ICS file: $e'));
+    }
+  }
+
+  Future<void> _onImportICSContent(
+    ImportICSContent event,
+    Emitter<CalendarManagementState> emit,
+  ) async {
+    emit(CalendarSyncing(event.calendarId));
+
+    try {
+      // Find the calendar by ID
+      final calendars = await _calendarRepo.getCalendars();
+      final calendar = calendars.firstWhere(
+        (cal) => cal.id == event.calendarId,
+        orElse: () => throw Exception('Calendar not found'),
+      );
+
+      // Import events from the ICS content
+      final importedEvents = await _icsImportService.importFromString(
+        event.icsContent,
+        calendar,
+      );
+
+      // Save events to the repository
+      for (final event in importedEvents) {
+        await _eventRepo.createEvent(event);
+      }
+
+      emit(CalendarSyncComplete(event.calendarId, importedEvents.length));
+
+      // Reload calendars
+      add(const LoadCalendars());
+    } catch (e) {
+      emit(CalendarSyncError(
+          event.calendarId, 'Failed to import ICS content: $e'));
     }
   }
 }

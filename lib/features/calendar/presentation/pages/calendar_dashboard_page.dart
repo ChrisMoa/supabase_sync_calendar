@@ -1,9 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_sharing_intent/flutter_sharing_intent.dart';
+import 'package:flutter_sharing_intent/model/sharing_file.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:supabase_sync_calendar/core/models/calendar_event_model.dart';
 import 'package:supabase_sync_calendar/core/models/calendar_model.dart';
+import 'package:supabase_sync_calendar/core/services/ics_import_service.dart';
 import 'package:supabase_sync_calendar/core/utils/error_utils.dart';
 import 'package:supabase_sync_calendar/core/widgets/loading_indicator.dart';
 import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_management_bloc/calendar_management_bloc.dart';
@@ -16,6 +21,7 @@ import 'package:supabase_sync_calendar/features/calendar/presentation/pages/cale
 import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/calendar_selector.dart';
 import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/event_edit_dialog.dart';
 import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/event_series_dialog.dart';
+import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/ics_import_dialog.dart';
 import 'package:supabase_sync_calendar/features/calendar/presentation/widgets/sf_calendar_widget.dart';
 import 'package:syncfusion_flutter_calendar/calendar.dart';
 import 'package:uuid/uuid.dart';
@@ -57,6 +63,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
             userId: widget.user.id,
           ));
     });
+    _initializeFileHandling();
   }
 
   @override
@@ -88,9 +95,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
           ),
           backgroundColor: Theme.of(context).colorScheme.inversePrimary,
           actions: [
-            // Add calendar selector
             const CalendarSelector(),
-            // Add calendar management button
             IconButton(
               onPressed: _navigateToCalendarManagement,
               icon: const Icon(Icons.calendar_view_day),
@@ -101,6 +106,26 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
               onPressed: _logout,
               icon: const Icon(Icons.logout),
               tooltip: 'Logout',
+            ),
+            PopupMenuButton(
+              icon: const Icon(Icons.more_vert),
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'logout',
+                  child: Row(
+                    children: [
+                      Icon(Icons.logout, size: 20),
+                      SizedBox(width: 8),
+                      Text('Logout'),
+                    ],
+                  ),
+                ),
+              ],
+              onSelected: (value) {
+                if (value == 'logout') {
+                  _logout();
+                }
+              },
             ),
           ],
         ),
@@ -122,8 +147,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
           builder: (context, state) {
             print('Building UI for calendar state: ${state.runtimeType}');
             if (state is CalendarLoading) {
-              return const LoadingIndicator(
-                  message: 'Loading your calendar events...');
+              return const LoadingIndicator(message: 'Loading your calendar events...');
             } else if (state is CalendarLoaded) {
               print('Building calendar with ${state.events.length} events');
               if (state.events.isEmpty) {
@@ -133,24 +157,22 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
                 final count = state.events.length > 3 ? 3 : state.events.length;
                 for (int i = 0; i < count; i++) {
                   final e = state.events[i];
-                  print(
-                      'Event $i: ${e.title}, ${e.start}-${e.end}, color: ${e.color}');
+                  print('Event $i: ${e.title}, ${e.start}-${e.end}, color: ${e.color}');
                 }
+                context.read<CalendarManagementBloc>().add(const LoadCalendars());
               }
               return _buildCalendar(state);
             } else {
               print('Initializing calendar...');
               // Instead of showing loading, initialize the bloc
               if (state is CalendarInitial) {
-                print(
-                    'Initializing calendar bloc with user ID: ${widget.user.id}');
+                print('Initializing calendar bloc with user ID: ${widget.user.id}');
                 context.read<CalendarBloc>().add(CalendarInitialize(
                       supabaseClient: widget.supabaseClient,
                       userId: widget.user.id,
                     ));
               }
-              return const LoadingIndicator(
-                  message: 'Initializing calendar...');
+              return const LoadingIndicator(message: 'Initializing calendar...');
             }
           },
         ),
@@ -164,8 +186,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
   }
 
   Widget _buildCalendar(CalendarLoaded state) {
-    print(
-        'Building SfCalendarWidget with ${state.events.length} events and viewType: ${state.calendarViewType}');
+    print('Building SfCalendarWidget with ${state.events.length} events and viewType: ${state.calendarViewType}');
 
     // Ensure CalendarManagementBloc is available to SfCalendarWidget
     return BlocProvider<CalendarManagementBloc>(
@@ -276,15 +297,13 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
     calendarManagementBloc.stream.listen((state) {
       print("State observed outside build context: ${state.runtimeType}");
 
-      if (state is DeviceCalendarsAvailable &&
-          state.deviceCalendars.isNotEmpty) {
+      if (state is DeviceCalendarsAvailable && state.deviceCalendars.isNotEmpty) {
         print("DeviceCalendarsAvailable detected outside widget");
 
         // Show dialog outside of build context
         showDialog(
           context: context,
-          builder: (dialogContext) => _buildDeviceCalendarSelectionDialog(
-              dialogContext, state.deviceCalendars, calendarManagementBloc),
+          builder: (dialogContext) => _buildDeviceCalendarSelectionDialog(dialogContext, state.deviceCalendars, calendarManagementBloc),
         );
       }
     });
@@ -309,8 +328,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
     );
   }
 
-  Widget _buildDeviceCalendarSelectionDialog(BuildContext dialogContext,
-      List<dynamic> deviceCalendars, CalendarManagementBloc bloc) {
+  Widget _buildDeviceCalendarSelectionDialog(BuildContext dialogContext, List<dynamic> deviceCalendars, CalendarManagementBloc bloc) {
     // Create a mutable list to maintain selected state
     List<bool> selectedStates = List.filled(deviceCalendars.length, false);
 
@@ -330,16 +348,14 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
                   itemBuilder: (context, index) {
                     final deviceCalendar = deviceCalendars[index];
                     // Print calendar details for debugging
-                    print(
-                        "Calendar $index: name=${deviceCalendar.name}, id=${deviceCalendar.id}");
+                    print("Calendar $index: name=${deviceCalendar.name}, id=${deviceCalendar.id}");
 
                     return CheckboxListTile(
                       title: Text(deviceCalendar.name ?? 'Unnamed Calendar'),
                       subtitle: Text(deviceCalendar.id ?? ''),
                       value: selectedStates[index],
                       onChanged: (bool? value) {
-                        print(
-                            "Selection changed for calendar ${deviceCalendar.name}: $value");
+                        print("Selection changed for calendar ${deviceCalendar.name}: $value");
                         setState(() {
                           selectedStates[index] = value ?? false;
                         });
@@ -381,33 +397,27 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
   }
 
   // Process the selected device calendars
-  void _processSelectedCalendars(
-      List<dynamic> selectedCalendars, CalendarManagementBloc bloc) {
+  void _processSelectedCalendars(List<dynamic> selectedCalendars, CalendarManagementBloc bloc) {
     final uuid = Uuid();
 
     if (selectedCalendars.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('No calendars selected')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No calendars selected')));
       return;
     }
 
     // Show progress indicator
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Importing ${selectedCalendars.length} calendars...')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Importing ${selectedCalendars.length} calendars...')));
 
     // Process each calendar
     for (int i = 0; i < selectedCalendars.length; i++) {
       final deviceCalendar = selectedCalendars[i];
-      print(
-          "Processing device calendar: name=${deviceCalendar.name}, id=${deviceCalendar.id}");
+      print("Processing device calendar: name=${deviceCalendar.name}, id=${deviceCalendar.id}");
 
       // Create a new calendar model
       final newCalendar = CalendarModel(
         id: uuid.v4(),
         name: deviceCalendar.name ?? 'Device Calendar',
-        color: deviceCalendar.color != null
-            ? Color(deviceCalendar.color)
-            : Colors.primaries[i % Colors.primaries.length],
+        color: deviceCalendar.color != null ? Color(deviceCalendar.color) : Colors.primaries[i % Colors.primaries.length],
         userId: widget.user.id,
         type: CalendarType.device,
         deviceCalendarId: deviceCalendar.id,
@@ -480,16 +490,13 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
     final endTime = startTime.add(const Duration(hours: 1));
 
     // Get available calendars from CalendarManagementBloc
-    final calendarManagementState =
-        context.read<CalendarManagementBloc>().state;
+    final calendarManagementState = context.read<CalendarManagementBloc>().state;
     List<CalendarModel> availableCalendars = [];
     CalendarModel? defaultCalendar;
 
     if (calendarManagementState is CalendarManagementLoaded) {
       availableCalendars = calendarManagementState.calendars
-          .where((cal) =>
-              cal.type ==
-              CalendarType.local) // Only local calendars for new events
+          .where((cal) => cal.type == CalendarType.local) // Only local calendars for new events
           .toList();
       defaultCalendar = calendarManagementState.defaultCalendar;
     }
@@ -518,8 +525,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
         calendarId: defaultCalendar?.id ?? availableCalendars.first.id,
         color: defaultCalendar?.color ?? Colors.blue,
         calendars: availableCalendars,
-        onSave: (title, description, start, end, color, wholeDay, calendarId,
-            reminder) {
+        onSave: (title, description, start, end, color, wholeDay, calendarId, reminder) {
           final newEvent = CalendarEventModel(
             id: _uuid.v4(),
             title: title,
@@ -548,8 +554,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
 
     // Show success message
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      ErrorUtils.showSuccessSnackBar(
-          context, 'Event "${eventWithUserId.title}" added successfully');
+      ErrorUtils.showSuccessSnackBar(context, 'Event "${eventWithUserId.title}" added successfully');
     });
   }
 
@@ -561,22 +566,17 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Update Series Event'),
-          content: const Text(
-              'Do you want to update just this event or all events in the series?'),
+          content: const Text('Do you want to update just this event or all events in the series?'),
           actions: [
             TextButton(
               onPressed: () {
                 Navigator.of(context).pop();
                 // Update just this event
-                final eventWithUserId =
-                    updatedEvent.copyWith(userId: widget.user.id);
-                context
-                    .read<CalendarBloc>()
-                    .add(CalendarUpdateEvent(eventWithUserId));
+                final eventWithUserId = updatedEvent.copyWith(userId: widget.user.id);
+                context.read<CalendarBloc>().add(CalendarUpdateEvent(eventWithUserId));
 
                 SchedulerBinding.instance.addPostFrameCallback((_) {
-                  ErrorUtils.showSuccessSnackBar(
-                      context, 'Event "${updatedEvent.title}" updated');
+                  ErrorUtils.showSuccessSnackBar(context, 'Event "${updatedEvent.title}" updated');
                 });
               },
               child: const Text('This Event Only'),
@@ -595,13 +595,10 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
                 eventSeriesBloc.stream.listen((state) {
                   if (state is EventSeriesUpdated) {
                     // Reload all events
-                    context
-                        .read<CalendarBloc>()
-                        .add(const CalendarLoadEvents());
+                    context.read<CalendarBloc>().add(const CalendarLoadEvents());
 
                     SchedulerBinding.instance.addPostFrameCallback((_) {
-                      ErrorUtils.showSuccessSnackBar(
-                          context, 'All events in series updated');
+                      ErrorUtils.showSuccessSnackBar(context, 'All events in series updated');
                     });
                   } else if (state is EventSeriesError) {
                     SchedulerBinding.instance.addPostFrameCallback((_) {
@@ -623,8 +620,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
 
       // Show success message
       SchedulerBinding.instance.addPostFrameCallback((_) {
-        ErrorUtils.showSuccessSnackBar(
-            context, 'Event "${updatedEvent.title}" updated');
+        ErrorUtils.showSuccessSnackBar(context, 'Event "${updatedEvent.title}" updated');
       });
     }
   }
@@ -659,8 +655,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
           context: context,
           builder: (context) => AlertDialog(
             title: const Text('Delete Series Event'),
-            content: Text(
-                'Do you want to delete just "$eventTitle" or all events in the series?'),
+            content: Text('Do you want to delete just "$eventTitle" or all events in the series?'),
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(context).pop(),
@@ -678,14 +673,12 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
 
                   // Listen for result
                   eventSeriesBloc.stream.listen((state) {
-                    if (state is EventSeriesUpdated ||
-                        state is EventSeriesDeleted) {
+                    if (state is EventSeriesUpdated || state is EventSeriesDeleted) {
                       // Reload all events
                       calendarBloc.add(const CalendarLoadEvents());
 
                       SchedulerBinding.instance.addPostFrameCallback((_) {
-                        ErrorUtils.showSuccessSnackBar(
-                            context, 'Event "$eventTitle" deleted');
+                        ErrorUtils.showSuccessSnackBar(context, 'Event "$eventTitle" deleted');
                       });
                     }
                   });
@@ -711,8 +704,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
 
         // Show success message
         SchedulerBinding.instance.addPostFrameCallback((_) {
-          ErrorUtils.showSuccessSnackBar(
-              context, 'Event "$eventTitle" deleted');
+          ErrorUtils.showSuccessSnackBar(context, 'Event "$eventTitle" deleted');
         });
       }
     } else {
@@ -757,8 +749,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
               context.read<CalendarBloc>().add(const CalendarLoadEvents());
 
               SchedulerBinding.instance.addPostFrameCallback((_) {
-                ErrorUtils.showSuccessSnackBar(
-                    context, 'Event series created successfully');
+                ErrorUtils.showSuccessSnackBar(context, 'Event series created successfully');
               });
             } else if (state is EventSeriesError) {
               SchedulerBinding.instance.addPostFrameCallback((_) {
@@ -769,5 +760,37 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
         },
       ),
     );
+  }
+
+  Future<void> _initializeFileHandling() async {
+    // Handle files shared while the app is closed
+    FlutterSharingIntent.instance.getInitialSharing().then((List<SharedFile> value) async {
+      if (value.first.value == null) {
+        return;
+      }
+      final calendarManagementBloc = context.read<CalendarManagementBloc>();
+      if (calendarManagementBloc.state is! CalendarManagementLoaded) {
+        calendarManagementBloc.add(LoadCalendars());
+      }
+      var timeout = 5000;
+      while (calendarManagementBloc.state is! CalendarManagementLoaded) {
+        // Wait for the calendars to be loaded
+        await Future.delayed(const Duration(milliseconds: 100));
+        timeout -= 100;
+        if (timeout <= 0) {
+          return;
+        }
+      }
+      final state = calendarManagementBloc.state as CalendarManagementLoaded;
+      final events = await ICSImportService().processOpenedFiles(value, state.defaultCalendar!);
+      for (final event in events) {
+        context.read<CalendarBloc>().add(CalendarAddEvent(event));
+      }
+    });
+
+    // Handle files shared while the app is running
+    FlutterSharingIntent.instance.getMediaStream().listen((List<SharedFile> value) {
+      print('Media stream: $value');
+    });
   }
 }
