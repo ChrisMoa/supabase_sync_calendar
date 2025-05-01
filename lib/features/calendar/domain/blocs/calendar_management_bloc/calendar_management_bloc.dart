@@ -12,8 +12,7 @@ import '../../../data/services/webdav_calendar_service.dart';
 import 'calendar_management_event.dart';
 import 'calendar_management_state.dart';
 
-class CalendarManagementBloc
-    extends Bloc<CalendarManagementEvent, CalendarManagementState> {
+class CalendarManagementBloc extends Bloc<CalendarManagementEvent, CalendarManagementState> {
   final CalendarManagementRepository _calendarRepo;
   final CalendarRepository _eventRepo;
   final WebDAVCalendarService _webdavService = WebDAVCalendarService();
@@ -47,8 +46,7 @@ class CalendarManagementBloc
     });
 
     on<SyncDeviceCalendar>((event, emit) {
-      print(
-          'SyncDeviceCalendar event handler called for ${event.calendar.name}');
+      print('SyncDeviceCalendar event handler called for ${event.calendar.name}');
       return _onSyncDeviceCalendar(event, emit);
     });
 
@@ -102,9 +100,7 @@ class CalendarManagementBloc
       if (currentState is CalendarManagementLoaded) {
         emit(CalendarManagementLoaded(
           calendars: [...currentState.calendars, newCalendar],
-          defaultCalendar: newCalendar.isDefault
-              ? newCalendar
-              : currentState.defaultCalendar,
+          defaultCalendar: newCalendar.isDefault ? newCalendar : currentState.defaultCalendar,
         ));
       }
     } catch (e) {
@@ -129,12 +125,10 @@ class CalendarManagementBloc
       }
 
       // Update the calendar
-      final updatedCalendar =
-          await _calendarRepo.updateCalendar(event.calendar);
+      final updatedCalendar = await _calendarRepo.updateCalendar(event.calendar);
 
       // Check if the color has changed
-      if (previousCalendar != null &&
-          previousCalendar.color != updatedCalendar.color) {
+      if (previousCalendar != null && previousCalendar.color != updatedCalendar.color) {
         // Update all events' colors associated with this calendar
         await _updateEventsColorForCalendar(updatedCalendar);
       }
@@ -147,9 +141,7 @@ class CalendarManagementBloc
 
         emit(CalendarManagementLoaded(
           calendars: updatedCalendars,
-          defaultCalendar: updatedCalendar.isDefault
-              ? updatedCalendar
-              : currentState.defaultCalendar,
+          defaultCalendar: updatedCalendar.isDefault ? updatedCalendar : currentState.defaultCalendar,
         ));
       }
     } catch (e) {
@@ -165,14 +157,13 @@ class CalendarManagementBloc
 
       // Update each event with the new calendar color
       for (final event in events) {
-        final updatedEvent = event.copyWith(color: calendar.color);
+        final updatedEvent = event.copyWith(colorValue: calendar.colorValue);
         if (calendarBloc != null) {
           calendarBloc!.add(CalendarUpdateEvent(updatedEvent));
         }
       }
 
-      print(
-          'Updated colors for ${events.length} events in calendar ${calendar.name}');
+      print('Updated colors for ${events.length} events in calendar ${calendar.name}');
     } catch (e) {
       print('Error updating event colors: $e');
       // Don't throw here, just log the error to not interrupt the calendar update
@@ -188,13 +179,10 @@ class CalendarManagementBloc
 
       final currentState = state;
       if (currentState is CalendarManagementLoaded) {
-        final updatedCalendars = currentState.calendars
-            .where((calendar) => calendar.id != event.calendarId)
-            .toList();
+        final updatedCalendars = currentState.calendars.where((calendar) => calendar.id != event.calendarId).toList();
 
         // Check if we deleted the default calendar
-        final isDefaultDeleted =
-            currentState.defaultCalendar?.id == event.calendarId;
+        final isDefaultDeleted = currentState.defaultCalendar?.id == event.calendarId;
         CalendarModel? newDefault;
 
         if (isDefaultDeleted && updatedCalendars.isNotEmpty) {
@@ -214,8 +202,7 @@ class CalendarManagementBloc
         } else {
           emit(CalendarManagementLoaded(
             calendars: updatedCalendars,
-            defaultCalendar:
-                isDefaultDeleted ? null : currentState.defaultCalendar,
+            defaultCalendar: isDefaultDeleted ? null : currentState.defaultCalendar,
           ));
         }
       }
@@ -279,8 +266,7 @@ class CalendarManagementBloc
       // Reload the full state
       add(const LoadCalendars());
     } catch (e) {
-      emit(CalendarSyncError(
-          event.calendar.id, 'Failed to sync WebDAV calendar: $e'));
+      emit(CalendarSyncError(event.calendar.id, 'Failed to sync WebDAV calendar: $e'));
     }
   }
 
@@ -295,8 +281,7 @@ class CalendarManagementBloc
         throw Exception('Missing device calendar ID');
       }
 
-      print(
-          'Starting sync for device calendar: ${event.calendar.name} (${event.calendar.deviceCalendarId})');
+      print('Starting sync for device calendar: ${event.calendar.name} (${event.calendar.deviceCalendarId})');
 
       // Fetch events from device calendar
       final events = await _deviceService.syncDeviceCalendar(event.calendar);
@@ -309,8 +294,7 @@ class CalendarManagementBloc
       // Save the new events in batches to avoid memory issues
       const batchSize = 50;
       for (var i = 0; i < events.length; i += batchSize) {
-        final end =
-            (i + batchSize < events.length) ? i + batchSize : events.length;
+        final end = (i + batchSize < events.length) ? i + batchSize : events.length;
         final batch = events.sublist(i, end);
 
         for (final event in batch) {
@@ -326,8 +310,7 @@ class CalendarManagementBloc
       add(const LoadCalendars());
     } catch (e) {
       print('Error syncing device calendar: $e');
-      emit(CalendarSyncError(
-          event.calendar.id, 'Failed to sync device calendar: $e'));
+      emit(CalendarSyncError(event.calendar.id, 'Failed to sync device calendar: $e'));
     }
   }
 
@@ -358,8 +341,7 @@ class CalendarManagementBloc
   Future<void> _deleteExistingCalendarEvents(String calendarId) async {
     // Get all events for this calendar
     final events = await _eventRepo.getEvents();
-    final calendarEvents =
-        events.where((e) => e.calendarId == calendarId).toList();
+    final calendarEvents = events.where((e) => e.calendarId == calendarId).toList();
 
     // Delete each event
     for (final event in calendarEvents) {
@@ -397,8 +379,7 @@ class CalendarManagementBloc
       // Reload calendars
       add(const LoadCalendars());
     } catch (e) {
-      emit(
-          CalendarSyncError(event.calendarId, 'Failed to import ICS file: $e'));
+      emit(CalendarSyncError(event.calendarId, 'Failed to import ICS file: $e'));
     }
   }
 
@@ -432,8 +413,7 @@ class CalendarManagementBloc
       // Reload calendars
       add(const LoadCalendars());
     } catch (e) {
-      emit(CalendarSyncError(
-          event.calendarId, 'Failed to import ICS content: $e'));
+      emit(CalendarSyncError(event.calendarId, 'Failed to import ICS content: $e'));
     }
   }
 }

@@ -86,9 +86,7 @@ class CalendarSelector extends StatelessWidget {
                                 vertical: 2,
                               ),
                               decoration: BoxDecoration(
-                                color: Theme.of(context)
-                                    .primaryColor
-                                    .withOpacity(0.2),
+                                color: Theme.of(context).primaryColor.withOpacity(0.2),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: const Text(
@@ -110,8 +108,7 @@ class CalendarSelector extends StatelessWidget {
     );
   }
 
-  String _getCalendarFilterLabel(
-      String? activeCalendarId, List<CalendarModel> calendars) {
+  String _getCalendarFilterLabel(String? activeCalendarId, List<CalendarModel> calendars) {
     if (activeCalendarId == null) {
       return 'All Calendars';
     }
@@ -119,10 +116,10 @@ class CalendarSelector extends StatelessWidget {
     final calendar = calendars.firstWhere(
       (cal) => cal.id == activeCalendarId,
       orElse: () => CalendarModel(
-        id: '',
-        name: 'Unknown',
-        color: Colors.grey,
-        userId: '',
+        id: 'unknown',
+        name: 'Unknown Calendar',
+        colorValue: Colors.grey.value,
+        userId: 'unknown',
         type: CalendarType.local,
       ),
     );

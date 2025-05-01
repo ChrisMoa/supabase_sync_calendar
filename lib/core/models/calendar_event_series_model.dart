@@ -1,28 +1,51 @@
 import 'package:equatable/equatable.dart';
+import 'package:hive/hive.dart';
 
+part 'calendar_event_series_model.g.dart';
+
+@HiveType(typeId: 11)
 enum SeriesRepeatType {
+  @HiveField(0)
   none,
+  @HiveField(1)
   daily,
+  @HiveField(2)
   weekly,
+  @HiveField(3)
   monthly,
+  @HiveField(4)
   yearly,
 }
 
+@HiveType(typeId: 12)
 enum SeriesEndType {
+  @HiveField(0)
   never,
+  @HiveField(1)
   afterOccurrences,
+  @HiveField(2)
   onDate,
 }
 
+@HiveType(typeId: 3)
 class CalendarEventSeriesModel extends Equatable {
+  @HiveField(0)
   final String id;
+  @HiveField(1)
   final String userId;
+  @HiveField(2)
   final SeriesRepeatType repeatType;
+  @HiveField(3)
   final int repeatInterval; // Every X days/weeks/months/years
+  @HiveField(4)
   final List<int> repeatDaysOfWeek; // For weekly repeats, 1-7 (Monday-Sunday)
+  @HiveField(5)
   final SeriesEndType endType;
+  @HiveField(6)
   final int? occurrences; // For afterOccurrences end type
+  @HiveField(7)
   final DateTime? endDate; // For onDate end type
+  @HiveField(8)
   final String templateEventId; // ID of the first event that serves as template
 
   const CalendarEventSeriesModel({
@@ -44,14 +67,10 @@ class CalendarEventSeriesModel extends Equatable {
       userId: json['user_id'] as String,
       repeatType: SeriesRepeatType.values[json['repeat_type'] as int],
       repeatInterval: json['repeat_interval'] as int,
-      repeatDaysOfWeek: json['repeat_days_of_week'] != null
-          ? List<int>.from(json['repeat_days_of_week'] as List)
-          : [],
+      repeatDaysOfWeek: json['repeat_days_of_week'] != null ? List<int>.from(json['repeat_days_of_week'] as List) : [],
       endType: SeriesEndType.values[json['end_type'] as int],
       occurrences: json['occurrences'] as int?,
-      endDate: json['end_date'] != null
-          ? DateTime.parse(json['end_date'] as String)
-          : null,
+      endDate: json['end_date'] != null ? DateTime.parse(json['end_date'] as String) : null,
       templateEventId: json['template_event_id'] as String,
     );
   }

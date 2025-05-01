@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:supabase_sync_calendar/features/calendar/domain/blocs/calendar_management_bloc/calendar_management_bloc.dart';
 import 'package:supabase_sync_calendar/features/calendar/domain/blocs/event_series_bloc/event_series_bloc.dart';
+import 'package:supabase_sync_calendar/core/services/network_service.dart';
 
 import 'features/auth/domain/blocs/custom_auth_bloc/custom_auth_bloc.dart';
 import 'features/auth/domain/blocs/custom_auth_bloc/custom_auth_state.dart';
@@ -14,8 +15,17 @@ import 'features/calendar/presentation/pages/calendar_dashboard_page.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize secure storage for credentials
+  // Create a secure storage with Windows-compatible options
+  // Since Windows doesn't support encryption directly in secure storage,
+  // we'll just use the standard implementation without encryption options
   const secureStorage = FlutterSecureStorage();
+
+  // Initialize network service for connectivity monitoring
+  final networkService = NetworkService();
+  await networkService.initialize();
+
+  // Register Hive adapters - This is done in CustomAuthBloc upon login
+  // HiveService.registerHiveAdapters(); // Removed redundant call
 
   runApp(MyApp(
     secureStorage: secureStorage,

@@ -79,8 +79,7 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
       // Debug event data
       if (events.isNotEmpty) {
         final sampleEvent = events.first;
-        print(
-            'Sample event: title=${sampleEvent.title}, start=${sampleEvent.start}, end=${sampleEvent.end}, calendarId=${sampleEvent.calendarId}');
+        print('Sample event: title=${sampleEvent.title}, start=${sampleEvent.start}, end=${sampleEvent.end}, calendarId=${sampleEvent.calendarId}');
       } else {
         print('No events found');
       }
@@ -131,8 +130,7 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
       } catch (e) {
         print('Failed to add event: $e');
         if (e.toString().contains('Table does not exist')) {
-          emit(CalendarError(
-              'The calendar_events table does not exist in Supabase. Please run the setup script.'));
+          emit(CalendarError('The calendar_events table does not exist in Supabase. Please run the setup script.'));
         } else {
           emit(CalendarError('Failed to add event: $e'));
         }
@@ -209,8 +207,7 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
       await _repository!.deleteEvent(event.eventId);
 
       // Filter out the deleted event from the lists
-      final filteredEvents =
-          currentState.events.where((e) => e.id != event.eventId).toList();
+      final filteredEvents = currentState.events.where((e) => e.id != event.eventId).toList();
 
       emit(CalendarLoaded(
         events: filteredEvents,
@@ -273,8 +270,7 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
         if (event.eventId == null) return;
 
         // Filter out the deleted event from the lists
-        final filteredEvents =
-            currentState.events.where((e) => e.id != event.eventId).toList();
+        final filteredEvents = currentState.events.where((e) => e.id != event.eventId).toList();
 
         emit(CalendarLoaded(
           events: filteredEvents,
@@ -303,9 +299,7 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
 
     try {
       // If calendarId is null, show all events
-      final events = event.calendarId == null
-          ? await _repository!.getEvents()
-          : await _repository!.getEvents(calendarId: event.calendarId);
+      final events = event.calendarId == null ? await _repository!.getEvents() : await _repository!.getEvents(calendarId: event.calendarId);
 
       emit(CalendarLoaded(
         events: events,
@@ -335,31 +329,31 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
       {
         'title': 'Morning Meeting',
         'description': 'Daily team standup',
-        'color': Colors.blue,
+        'colorValue': Colors.blue.value,
         'calendarId': 'work',
       },
       {
         'title': 'Lunch with Client',
         'description': 'Discuss new project requirements',
-        'color': Colors.green,
+        'colorValue': Colors.green.value,
         'calendarId': 'work',
       },
       {
         'title': 'Project Review',
         'description': 'End of sprint review',
-        'color': Colors.orange,
+        'colorValue': Colors.orange.value,
         'calendarId': 'work',
       },
       {
         'title': 'Family Dinner',
         'description': 'At home',
-        'color': Colors.purple,
+        'colorValue': Colors.purple.value,
         'calendarId': 'family',
       },
       {
         'title': 'Gym Session',
         'description': 'Cardio and weights',
-        'color': Colors.red,
+        'colorValue': Colors.red.value,
         'calendarId': 'personal',
       },
     ];
@@ -382,41 +376,40 @@ class CalendarBloc extends Bloc<CalendarEvent, CalendarState> {
 
       if (isWholeDay) {
         // Whole day event
-        startTime =
-            DateTime(eventDate.year, eventDate.month, eventDate.day, 0, 0);
-        endTime = DateTime(
-            eventDate.year, eventDate.month, eventDate.day, 23, 59, 59);
+        startTime = DateTime(eventDate.year, eventDate.month, eventDate.day, 0, 0);
+        endTime = DateTime(eventDate.year, eventDate.month, eventDate.day, 23, 59, 59);
       } else {
         // Regular event
         final startHour = 7 + random.nextInt(11);
-        final startMinute =
-            [0, 15, 30, 45][random.nextInt(4)]; // Quarter-hour intervals
+        final startMinute = [0, 15, 30, 45][random.nextInt(4)]; // Quarter-hour intervals
         final durationMinutes = 30 + random.nextInt(5) * 30; // 30min increments
 
-        startTime = DateTime(eventDate.year, eventDate.month, eventDate.day,
-            startHour, startMinute);
+        startTime = DateTime(eventDate.year, eventDate.month, eventDate.day, startHour, startMinute);
 
         endTime = startTime.add(Duration(minutes: durationMinutes));
       }
 
       // 30% chance of having a reminder
-      DateTime? reminder = random.nextInt(10) < 3
-          ? startTime.subtract(Duration(minutes: 15 * (1 + random.nextInt(8))))
-          : null;
+      DateTime? reminder = random.nextInt(10) < 3 ? startTime.subtract(Duration(minutes: 15 * (1 + random.nextInt(8)))) : null;
+
+      // For sample events, let's not use series functionality
+      final String? seriesId = null;
 
       events.add(
         CalendarEventModel(
           id: uuid.v4(),
           title: template['title'] as String,
-          description: template['description'] as String,
+          description: template['description'] as String? ?? '',
           start: startTime,
           end: endTime,
-          color: template['color'] as Color,
-          userId: 'sample',
           wholeDay: isWholeDay,
-          calendarId: template['calendarId'] as String,
           reminder: reminder,
-          appendixes: const [],
+          appendixes: const [], // Assuming appendixes start empty for generated events
+          seriesId: seriesId,
+          colorValue: template['colorValue'] as int,
+          userId: 'sample',
+          calendarId: template['calendarId'] as String,
+          isExternalReadOnly: false,
         ),
       );
     }

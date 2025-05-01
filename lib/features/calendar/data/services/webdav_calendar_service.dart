@@ -30,8 +30,7 @@ class WebDAVCalendarService {
   }
 
   // Convert iCalendar events to CalendarEventModel
-  List<CalendarEventModel> _convertICalendarEvents(
-      ICalendar iCalendar, CalendarModel calendar) {
+  List<CalendarEventModel> _convertICalendarEvents(ICalendar iCalendar, CalendarModel calendar) {
     final events = <CalendarEventModel>[];
 
     for (final event in iCalendar.data) {
@@ -51,8 +50,7 @@ class WebDAVCalendarService {
       if (event['dtstart'] != null) {
         if (event['dtstart'] is DateTime) {
           start = event['dtstart'] as DateTime;
-        } else if (event['dtstart'] is Map &&
-            event['dtstart']['value'] is DateTime) {
+        } else if (event['dtstart'] is Map && event['dtstart']['value'] is DateTime) {
           start = event['dtstart']['value'] as DateTime;
           // Check if it's a date-only value (all-day event)
           isAllDay = event['dtstart']['params']?['value'] == 'DATE';
@@ -62,8 +60,7 @@ class WebDAVCalendarService {
       if (event['dtend'] != null) {
         if (event['dtend'] is DateTime) {
           end = event['dtend'] as DateTime;
-        } else if (event['dtend'] is Map &&
-            event['dtend']['value'] is DateTime) {
+        } else if (event['dtend'] is Map && event['dtend']['value'] is DateTime) {
           end = event['dtend']['value'] as DateTime;
         }
       }
@@ -77,12 +74,11 @@ class WebDAVCalendarService {
         description: description,
         start: start,
         end: end,
-        color: calendar.color,
+        colorValue: calendar.colorValue,
         userId: calendar.userId,
         calendarId: calendar.id,
         wholeDay: isAllDay,
-        isExternalReadOnly:
-            true, // Mark as read-only since it's from external source
+        isExternalReadOnly: true, // Mark as read-only since it's from external source
       ));
     }
 

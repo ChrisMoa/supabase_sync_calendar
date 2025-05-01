@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_sync_calendar/core/services/hive_service.dart';
+import 'package:supabase_sync_calendar/core/services/sync_service.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../../core/models/calendar_event_model.dart';
@@ -8,54 +11,62 @@ class CalendarRepository {
   final SupabaseClient supabaseClient;
   final String userId;
   final Uuid _uuid = const Uuid();
+  late final SyncService _syncService;
 
   CalendarRepository({
     required this.supabaseClient,
     required this.userId,
-  });
+  }) {
+    _syncService = SyncService(
+      supabaseClient: supabaseClient,
+      userId: userId,
+    );
+
+    // Start auto-sync
+    _syncService.startAutoSync();
+  }
 
   Future<List<CalendarEventModel>> getEvents({String? calendarId}) async {
     try {
-      print(
-          'Fetching events for user: $userId, calendarId filter: ${calendarId ?? "none"}');
+      // Get events from local database first
+      List<CalendarEventModel> events;
+      if (calendarId != null) {
+        events = HiveService.getEventsByCalendar(calendarId);
+      } else {
+        events = HiveService.getAllEvents();
+      }
 
-      // First check if the table exists
-      try {
-        var query = supabaseClient
-            .from(SupabaseUtils.eventsTable)
-            .select()
-            .eq(SupabaseUtils.colUserId, userId);
+      // Filter for this user's events
+      events = events.where((e) => e.userId == userId).toList();
 
-        // Apply calendar filter if provided
-        if (calendarId != null) {
-          query = query.eq(SupabaseUtils.colCalendarId, calendarId);
-        }
+      // If no events found locally and we have an internet connection, try fetching from Supabase
+      if (events.isEmpty) {
+        debugPrint('No events found in local storage. Trying to fetch from Supabase...');
+        try {
+          final response = await supabaseClient.from(SupabaseUtils.eventsTable).select().eq(SupabaseUtils.colUserId, userId);
 
-        final response = await query;
+          if (calendarId != null) {
+            response.where((item) => item[SupabaseUtils.colCalendarId] == calendarId);
+          }
 
-        print('Successfully fetched ${response.length} events from database');
-        // Print sample event data for debugging
-        if (response.isNotEmpty) {
-          print('Sample event: ${response[0]}');
-        } else {
-          print('No events found in database');
-        }
+          final supabaseEvents = (response as List).map((json) => CalendarEventModel.fromJson(json)).toList();
 
-        return (response as List)
-            .map((eventJson) => CalendarEventModel.fromJson(eventJson))
-            .toList();
-      } catch (e) {
-        // Check if the error is about the table not existing
-        if (e.toString().contains('does not exist')) {
-          print('Events table does not exist, returning empty list');
-          return [];
-        } else {
-          print('Database error: $e');
-          rethrow;
+          // Store events in Hive for offline access
+          for (final event in supabaseEvents) {
+            await HiveService.saveEvent(event);
+          }
+
+          debugPrint('Fetched ${supabaseEvents.length} events from Supabase');
+          return supabaseEvents;
+        } catch (e) {
+          debugPrint('Error fetching events from Supabase: $e');
+          // If there's an error fetching from Supabase, return the empty local list
         }
       }
+
+      return events;
     } catch (e) {
-      print('Error fetching events: $e');
+      debugPrint('Error fetching events: $e');
       throw Exception('Failed to load events: $e');
     }
   }
@@ -63,43 +74,37 @@ class CalendarRepository {
   // Create a new event
   Future<CalendarEventModel> createEvent(CalendarEventModel event) async {
     try {
-      print('Creating new event with title: ${event.title}');
+      debugPrint('Creating new event with title: ${event.title}');
       final eventId = _uuid.v4();
       final newEvent = event.copyWith(id: eventId, userId: userId);
 
       // First, check if the table exists
       try {
         // Attempt to create the table if it doesn't exist
-        print('Checking/creating calendar_events table');
-        await supabaseClient
-            .rpc('ensure_calendar_events_table')
-            .catchError((e) {
-          print('Could not create table via RPC: $e');
+        debugPrint('Checking/creating calendar_events table');
+        await supabaseClient.rpc('ensure_calendar_events_table').catchError((e) {
+          debugPrint('Could not create table via RPC: $e');
           // This is expected if the RPC doesn't exist, just continue
         });
 
         // Insert the event data
-        print('Inserting event with ID: ${newEvent.id}');
-        final result = await supabaseClient
-            .from(SupabaseUtils.eventsTable)
-            .insert(newEvent.toJson())
-            .select();
+        debugPrint('Inserting event with ID: ${newEvent.id}');
+        final result = await supabaseClient.from(SupabaseUtils.eventsTable).insert(newEvent.toJson()).select();
 
-        print('Event created successfully');
+        debugPrint('Event created successfully');
 
         // If we get here, the operation succeeded
         return newEvent;
       } catch (e) {
         // If we get a specific error about table not existing
         if (e.toString().contains('does not exist')) {
-          print('Table does not exist - need to create it first');
-          throw Exception(
-              'Table does not exist. Please set up the calendar_events table in Supabase first.');
+          debugPrint('Table does not exist - need to create it first');
+          throw Exception('Table does not exist. Please set up the calendar_events table in Supabase first.');
         }
         rethrow;
       }
     } catch (e) {
-      print('Error creating event: $e');
+      debugPrint('Error creating event: $e');
       throw Exception('Failed to create event: $e');
     }
   }
@@ -107,11 +112,7 @@ class CalendarRepository {
   // Update an existing event
   Future<CalendarEventModel> updateEvent(CalendarEventModel event) async {
     try {
-      await supabaseClient
-          .from(SupabaseUtils.eventsTable)
-          .update(event.toJson())
-          .eq(SupabaseUtils.colId, event.id)
-          .eq(SupabaseUtils.colUserId, userId);
+      await supabaseClient.from(SupabaseUtils.eventsTable).update(event.toJson()).eq(SupabaseUtils.colId, event.id).eq(SupabaseUtils.colUserId, userId);
 
       return event;
     } catch (e) {
@@ -122,11 +123,7 @@ class CalendarRepository {
   // Delete an event
   Future<void> deleteEvent(String eventId) async {
     try {
-      await supabaseClient
-          .from(SupabaseUtils.eventsTable)
-          .delete()
-          .eq(SupabaseUtils.colId, eventId)
-          .eq(SupabaseUtils.colUserId, userId);
+      await supabaseClient.from(SupabaseUtils.eventsTable).delete().eq(SupabaseUtils.colId, eventId).eq(SupabaseUtils.colUserId, userId);
     } catch (e) {
       throw Exception('Failed to delete event: $e');
     }

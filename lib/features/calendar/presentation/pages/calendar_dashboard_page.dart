@@ -419,7 +419,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
       final newCalendar = CalendarModel(
         id: uuid.v4(),
         name: deviceCalendar.name ?? 'Device Calendar',
-        color: deviceCalendar.color != null ? Color(deviceCalendar.color) : Colors.primaries[i % Colors.primaries.length],
+        colorValue: deviceCalendar.color != null ? Color(deviceCalendar.color).value : Colors.primaries[i % Colors.primaries.length].value,
         userId: widget.user.id,
         type: CalendarType.device,
         deviceCalendarId: deviceCalendar.id,
@@ -509,7 +509,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
         CalendarModel(
           id: 'default',
           name: 'Default Calendar',
-          color: Colors.blue,
+          colorValue: Colors.blue.value,
           userId: widget.user.id,
           type: CalendarType.local,
           isDefault: true,
@@ -534,7 +534,7 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
             description: description,
             start: start,
             end: end,
-            color: color,
+            colorValue: color.value,
             userId: widget.user.id,
             calendarId: calendarId,
             wholeDay: wholeDay,
@@ -636,12 +636,12 @@ class _CalendarDashboardPageState extends State<CalendarDashboardPage> {
       final event = state.events.firstWhere(
         (event) => event.id == eventId,
         orElse: () => CalendarEventModel(
-          id: eventId,
-          title: 'Event',
+          id: 'placeholder',
+          title: 'Placeholder',
           description: '',
           start: DateTime.now(),
           end: DateTime.now().add(const Duration(hours: 1)),
-          color: Colors.blue,
+          colorValue: Colors.transparent.value, // Transparent placeholder
           userId: widget.user.id,
           calendarId: 'default',
           appendixes: const [],

@@ -155,12 +155,10 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
   }
 
   _AppointmentDataSource _getCalendarDataSource() {
-    print(
-        'SfCalendarWidget: Converting ${widget.events.length} events to appointments');
+    print('SfCalendarWidget: Converting ${widget.events.length} events to appointments');
 
     List<Appointment> appointments = widget.events.map((event) {
-      print(
-          'Processing event: ${event.id}, ${event.title}, ${event.start}-${event.end}');
+      print('Processing event: ${event.id}, ${event.title}, ${event.start}-${event.end}');
       return Appointment(
         id: event.id,
         subject: event.title,
@@ -185,12 +183,9 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
     // Remove any existing overlay first
     _removeOverlay();
 
-    if (details.targetElement == CalendarElement.appointment &&
-        details.appointments != null &&
-        details.appointments!.isNotEmpty) {
+    if (details.targetElement == CalendarElement.appointment && details.appointments != null && details.appointments!.isNotEmpty) {
       final appointment = details.appointments!.first as Appointment;
-      final String eventId =
-          appointment.id.toString(); // Fix: Use toString() to safely get ID
+      final String eventId = appointment.id.toString(); // Fix: Use toString() to safely get ID
 
       // Find the event
       final event = widget.events.firstWhere(
@@ -202,12 +197,10 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _showEventInfo(event, details);
       });
-    } else if (details.targetElement == CalendarElement.calendarCell &&
-        details.date != null) {
+    } else if (details.targetElement == CalendarElement.calendarCell && details.date != null) {
       // Create new event when clicking on empty cell
       final snappedTime = _snapTimeToInterval(details.date!);
-      final endTime =
-          snappedTime.add(Duration(minutes: widget.timeSnapInterval));
+      final endTime = snappedTime.add(Duration(minutes: widget.timeSnapInterval));
 
       _showAddEventDialog(snappedTime, endTime);
     }
@@ -227,11 +220,8 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
       // For appointments, use either details.position or a reasonable default
       if (details.date != null) {
         // Try to calculate position based on the date/time
-        final timeAxisHeight =
-            calendarSize.height / (widget.endHour - widget.startHour);
-        final hourOffset = details.date!.hour -
-            widget.startHour.toInt() +
-            (details.date!.minute / 60.0);
+        final timeAxisHeight = calendarSize.height / (widget.endHour - widget.startHour);
+        final hourOffset = details.date!.hour - widget.startHour.toInt() + (details.date!.minute / 60.0);
 
         position = Offset(
           calendarPosition.dx + 20,
@@ -302,17 +292,14 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
 
   void _showAddEventDialog(DateTime startTime, DateTime endTime) {
     // Get available calendars from CalendarManagementBloc
-    final calendarManagementBloc =
-        BlocProvider.of<CalendarManagementBloc>(context, listen: false);
+    final calendarManagementBloc = BlocProvider.of<CalendarManagementBloc>(context, listen: false);
     final calendarManagementState = calendarManagementBloc.state;
     List<CalendarModel> availableCalendars = [];
     CalendarModel? defaultCalendar;
 
     if (calendarManagementState is CalendarManagementLoaded) {
       // Filter out invalid calendars to avoid any issues
-      availableCalendars = calendarManagementState.calendars
-          .where((cal) => cal.id.isNotEmpty)
-          .toList();
+      availableCalendars = calendarManagementState.calendars.where((cal) => cal.id.isNotEmpty).toList();
       defaultCalendar = calendarManagementState.defaultCalendar;
 
       // Debug output
@@ -321,8 +308,7 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
         print('Calendar: ${cal.id}, ${cal.name}, ${cal.color}');
       }
     } else {
-      print(
-          'CalendarManagementState is not loaded: ${calendarManagementState.runtimeType}');
+      print('CalendarManagementState is not loaded: ${calendarManagementState.runtimeType}');
     }
 
     // Fallback if no calendars available
@@ -337,21 +323,19 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
         endTime: endTime,
         calendarId: defaultCalendar?.id ?? availableCalendars.first.id,
         color: defaultCalendar?.color ?? availableCalendars.first.color,
-        onSave: (title, description, start, end, color, wholeDay, calendarId,
-            reminder) {
+        onSave: (title, description, start, end, color, wholeDay, calendarId, reminder) {
+          // Create a placeholder event
           final newEvent = CalendarEventModel(
-            id: _uuid.v4(),
-            title: title,
-            description: description,
+            id: const Uuid().v4(),
+            title: 'New Event',
+            description: '',
             start: start,
             end: end,
-            color: defaultCalendar?.color.withAlpha(255) ??
-                Color.fromARGB(255, 255, 0, 0),
+            // Use colorValue from defaultCalendar or fallback
+            colorValue: defaultCalendar?.colorValue ?? Colors.red.value,
             userId: '', // This will be set in the bloc
             wholeDay: wholeDay,
-            calendarId: calendarId,
-            reminder: reminder,
-            appendixes: const [],
+            calendarId: defaultCalendar?.id ?? '', // Needs a valid calendar ID
           );
 
           if (widget.onEventAdd != null) {
@@ -365,16 +349,13 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
 
   void _showEditEventDialog(CalendarEventModel event) {
     // Get available calendars from CalendarManagementBloc
-    final calendarManagementBloc =
-        BlocProvider.of<CalendarManagementBloc>(context, listen: false);
+    final calendarManagementBloc = BlocProvider.of<CalendarManagementBloc>(context, listen: false);
     final calendarManagementState = calendarManagementBloc.state;
     List<CalendarModel> availableCalendars = [];
 
     if (calendarManagementState is CalendarManagementLoaded) {
       // Filter out invalid calendars
-      availableCalendars = calendarManagementState.calendars
-          .where((cal) => cal.id.isNotEmpty)
-          .toList();
+      availableCalendars = calendarManagementState.calendars.where((cal) => cal.id.isNotEmpty).toList();
 
       // Debug output
       print('Edit dialog: Found ${availableCalendars.length} calendars');
@@ -382,13 +363,11 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
         print('Calendar: ${cal.id}, ${cal.name}, ${cal.color}');
       }
     } else {
-      print(
-          'Edit dialog: CalendarManagementState is not loaded: ${calendarManagementState.runtimeType}');
+      print('Edit dialog: CalendarManagementState is not loaded: ${calendarManagementState.runtimeType}');
     }
 
     // Ensure the event's calendar is in the list, or add it if missing
-    bool eventCalendarExists =
-        availableCalendars.any((cal) => cal.id == event.calendarId);
+    bool eventCalendarExists = availableCalendars.any((cal) => cal.id == event.calendarId);
 
     if (!eventCalendarExists && event.calendarId.isNotEmpty) {
       // Add the event's calendar as a temporary item to avoid dropdown errors
@@ -396,7 +375,7 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
         CalendarModel(
           id: event.calendarId,
           name: 'Calendar',
-          color: event.color,
+          colorValue: event.color.value,
           userId: '',
           type: CalendarType.local,
           isDefault: false,
@@ -420,14 +399,14 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
         wholeDay: event.wholeDay,
         calendarId: event.calendarId,
         reminder: event.reminder,
-        onSave: (title, description, start, end, color, wholeDay, calendarId,
-            reminder) {
+        onSave: (title, description, start, end, color, wholeDay, calendarId, reminder) {
+          // Use color.value when creating/updating the model
           final updatedEvent = event.copyWith(
             title: title,
             description: description,
             start: start,
             end: end,
-            color: color,
+            colorValue: color.value,
             wholeDay: wholeDay,
             calendarId: calendarId,
             reminder: reminder,
@@ -445,14 +424,12 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
   void _handleCalendarLongPress(CalendarLongPressDetails details) {
     _removeOverlay();
 
-    if (details.targetElement == CalendarElement.calendarCell &&
-        details.date != null) {
+    if (details.targetElement == CalendarElement.calendarCell && details.date != null) {
       final DateTime date = details.date!;
 
       // Snap the time to the nearest interval
       final DateTime snappedTime = _snapTimeToInterval(date);
-      final DateTime endTime =
-          snappedTime.add(Duration(minutes: widget.timeSnapInterval));
+      final DateTime endTime = snappedTime.add(Duration(minutes: widget.timeSnapInterval));
 
       _showAddEventDialog(snappedTime, endTime);
     }
@@ -620,12 +597,9 @@ class _SfCalendarWidgetState extends State<SfCalendarWidget> {
     // This would be handled by your series management bloc
     // For now, we'll use a simple approach of finding and deleting all events with the same seriesId
 
-    if (event.seriesId != null &&
-        widget.events.isNotEmpty &&
-        widget.onEventDelete != null) {
+    if (event.seriesId != null && widget.events.isNotEmpty && widget.onEventDelete != null) {
       // Get all events in the same series
-      final seriesEvents =
-          widget.events.where((e) => e.seriesId == event.seriesId).toList();
+      final seriesEvents = widget.events.where((e) => e.seriesId == event.seriesId).toList();
 
       // Delete each event in the series
       for (final seriesEvent in seriesEvents) {

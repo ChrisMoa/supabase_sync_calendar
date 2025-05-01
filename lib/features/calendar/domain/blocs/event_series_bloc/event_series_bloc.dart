@@ -44,10 +44,8 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
       final series = await _seriesRepository.getSeriesById(event.seriesId);
 
       // Load events in the series
-      final List<CalendarEventModel> events =
-          await _eventRepository.getEvents();
-      final seriesEvents =
-          events.where((e) => e.seriesId == event.seriesId).toList();
+      final List<CalendarEventModel> events = await _eventRepository.getEvents();
+      final seriesEvents = events.where((e) => e.seriesId == event.seriesId).toList();
 
       emit(EventSeriesLoaded(series: series, events: seriesEvents));
     } catch (e) {
@@ -70,8 +68,7 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
       final savedSeries = await _seriesRepository.createSeries(newSeries);
 
       // Generate events for the series
-      final List<CalendarEventModel> generatedEvents =
-          await _seriesRepository.generateSeriesEvents(
+      final List<CalendarEventModel> generatedEvents = await _seriesRepository.generateSeriesEvents(
         savedSeries,
         event.templateEvent,
       );
@@ -109,8 +106,7 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
 
       if (event.regenerateEvents) {
         // Get the template event
-        final List<CalendarEventModel> events =
-            await _eventRepository.getEvents();
+        final List<CalendarEventModel> events = await _eventRepository.getEvents();
         final templateEvent = events.firstWhere(
           (e) => e.id == updatedSeries.templateEventId,
           orElse: () => throw Exception('Template event not found'),
@@ -120,8 +116,7 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
         await _deleteSeriesEvents(updatedSeries.id, keepTemplate: true);
 
         // Generate new events
-        final List<CalendarEventModel> generatedEvents =
-            await _seriesRepository.generateSeriesEvents(
+        final List<CalendarEventModel> generatedEvents = await _seriesRepository.generateSeriesEvents(
           updatedSeries,
           templateEvent,
         );
@@ -130,8 +125,7 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
         final List<CalendarEventModel> savedEvents = [];
         for (final generatedEvent in generatedEvents) {
           if (generatedEvent.id != templateEvent.id) {
-            final savedEvent =
-                await _eventRepository.createEvent(generatedEvent);
+            final savedEvent = await _eventRepository.createEvent(generatedEvent);
             savedEvents.add(savedEvent);
           } else {
             savedEvents.add(generatedEvent);
@@ -141,10 +135,8 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
         emit(EventSeriesUpdated(series: updatedSeries, events: savedEvents));
       } else {
         // Just return the updated series with the current events
-        final List<CalendarEventModel> events =
-            await _eventRepository.getEvents();
-        final seriesEvents =
-            events.where((e) => e.seriesId == updatedSeries.id).toList();
+        final List<CalendarEventModel> events = await _eventRepository.getEvents();
+        final seriesEvents = events.where((e) => e.seriesId == updatedSeries.id).toList();
 
         emit(EventSeriesUpdated(series: updatedSeries, events: seriesEvents));
       }
@@ -189,25 +181,22 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
         final series = await _seriesRepository.getSeriesById(seriesId);
 
         // Get all events in the series
-        final List<CalendarEventModel> allEvents =
-            await _eventRepository.getEvents();
-        final seriesEvents =
-            allEvents.where((e) => e.seriesId == seriesId).toList();
+        final List<CalendarEventModel> allEvents = await _eventRepository.getEvents();
+        final seriesEvents = allEvents.where((e) => e.seriesId == seriesId).toList();
 
         // Update all events with changes from the updated event
         final List<CalendarEventModel> updatedEvents = [];
 
         for (final seriesEvent in seriesEvents) {
           // Calculate time differences to keep relative timing
-          final Duration startDiff =
-              event.event.start.difference(seriesEvent.start);
+          final Duration startDiff = event.event.start.difference(seriesEvent.start);
           final Duration endDiff = event.event.end.difference(seriesEvent.end);
 
           // Update each event while preserving date and time
           final updatedEvent = seriesEvent.copyWith(
             title: event.event.title,
             description: event.event.description,
-            color: event.event.color,
+            colorValue: event.event.colorValue,
             wholeDay: event.event.wholeDay,
             reminder: event.event.reminder != null
                 ? seriesEvent.start.add(
@@ -227,8 +216,7 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
 
         // If this is the template event, we might need to update the series
         if (event.event.seriesId != null) {
-          final series =
-              await _seriesRepository.getSeriesById(event.event.seriesId!);
+          final series = await _seriesRepository.getSeriesById(event.event.seriesId!);
 
           // Check if this is the template event
           if (series.templateEventId == event.event.id) {
@@ -236,11 +224,8 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
             add(UpdateEventSeries(series: series, regenerateEvents: false));
           } else {
             // Just return the updated event
-            final List<CalendarEventModel> events =
-                await _eventRepository.getEvents();
-            final seriesEvents = events
-                .where((e) => e.seriesId == event.event.seriesId)
-                .toList();
+            final List<CalendarEventModel> events = await _eventRepository.getEvents();
+            final seriesEvents = events.where((e) => e.seriesId == event.event.seriesId).toList();
 
             emit(EventSeriesUpdated(series: series, events: seriesEvents));
           }
@@ -259,8 +244,7 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
 
     try {
       // Get the event
-      final List<CalendarEventModel> allEvents =
-          await _eventRepository.getEvents();
+      final List<CalendarEventModel> allEvents = await _eventRepository.getEvents();
       final eventToDelete = allEvents.firstWhere(
         (e) => e.id == event.eventId,
         orElse: () => throw Exception('Event not found'),
@@ -276,15 +260,13 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
 
       if (event.deleteAllFollowing) {
         // Delete this event and all future events
-        final seriesEvents =
-            allEvents.where((e) => e.seriesId == seriesId).toList();
+        final seriesEvents = allEvents.where((e) => e.seriesId == seriesId).toList();
 
         // Sort events by start date
         seriesEvents.sort((a, b) => a.start.compareTo(b.start));
 
         // Find index of the event to delete
-        final int eventIndex =
-            seriesEvents.indexWhere((e) => e.id == event.eventId);
+        final int eventIndex = seriesEvents.indexWhere((e) => e.id == event.eventId);
 
         if (eventIndex >= 0) {
           // Delete this event and all following events
@@ -296,15 +278,13 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
           if (series.templateEventId == event.eventId && eventIndex > 0) {
             // Make the previous event the new template
             final newTemplate = seriesEvents[eventIndex - 1];
-            final updatedSeries =
-                series.copyWith(templateEventId: newTemplate.id);
+            final updatedSeries = series.copyWith(templateEventId: newTemplate.id);
             await _seriesRepository.updateSeries(updatedSeries);
 
             // Get the remaining events
             final remainingEvents = seriesEvents.sublist(0, eventIndex);
 
-            emit(EventSeriesUpdated(
-                series: updatedSeries, events: remainingEvents));
+            emit(EventSeriesUpdated(series: updatedSeries, events: remainingEvents));
           } else if (eventIndex == 0) {
             // We deleted the first event, delete the whole series
             await _seriesRepository.deleteSeries(seriesId, deleteEvents: true);
@@ -323,21 +303,17 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
         // If we deleted the template event, update the series
         if (series.templateEventId == event.eventId) {
           // Get remaining events
-          final remainingEvents = allEvents
-              .where((e) => e.seriesId == seriesId && e.id != event.eventId)
-              .toList();
+          final remainingEvents = allEvents.where((e) => e.seriesId == seriesId && e.id != event.eventId).toList();
 
           if (remainingEvents.isNotEmpty) {
             // Make the first remaining event the new template
             remainingEvents.sort((a, b) => a.start.compareTo(b.start));
             final newTemplate = remainingEvents.first;
 
-            final updatedSeries =
-                series.copyWith(templateEventId: newTemplate.id);
+            final updatedSeries = series.copyWith(templateEventId: newTemplate.id);
             await _seriesRepository.updateSeries(updatedSeries);
 
-            emit(EventSeriesUpdated(
-                series: updatedSeries, events: remainingEvents));
+            emit(EventSeriesUpdated(series: updatedSeries, events: remainingEvents));
           } else {
             // No events left, delete the series
             await _seriesRepository.deleteSeries(seriesId);
@@ -345,9 +321,7 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
           }
         } else {
           // Get the remaining events
-          final remainingEvents = allEvents
-              .where((e) => e.seriesId == seriesId && e.id != event.eventId)
-              .toList();
+          final remainingEvents = allEvents.where((e) => e.seriesId == seriesId && e.id != event.eventId).toList();
 
           emit(EventSeriesUpdated(series: series, events: remainingEvents));
         }
@@ -358,14 +332,11 @@ class EventSeriesBloc extends Bloc<EventSeriesEvent, EventSeriesState> {
   }
 
   // Helper method to delete all events in a series, optionally keeping the template
-  Future<void> _deleteSeriesEvents(String seriesId,
-      {bool keepTemplate = false}) async {
+  Future<void> _deleteSeriesEvents(String seriesId, {bool keepTemplate = false}) async {
     try {
       // Get all events in the series
-      final List<CalendarEventModel> allEvents =
-          await _eventRepository.getEvents();
-      final seriesEvents =
-          allEvents.where((e) => e.seriesId == seriesId).toList();
+      final List<CalendarEventModel> allEvents = await _eventRepository.getEvents();
+      final seriesEvents = allEvents.where((e) => e.seriesId == seriesId).toList();
 
       // Get the template ID if needed
       String? templateId;

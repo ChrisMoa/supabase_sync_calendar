@@ -39,11 +39,16 @@ class _LoginPageState extends State<LoginPage> {
           if (state is AuthError) {
             // Use post frame callback to show error snackbar
             SchedulerBinding.instance.addPostFrameCallback((_) {
-              ErrorUtils.showErrorSnackBar(context, state.message);
+              if (mounted) {
+                ErrorUtils.showErrorSnackBar(context, state.message);
+              }
             });
           } else if (state is AuthAuthenticated) {
             // Use post frame callback to show success message and navigate
             SchedulerBinding.instance.addPostFrameCallback((_) {
+              // Only proceed if the widget is still mounted
+              if (!mounted) return;
+
               // Show success message
               ErrorUtils.showSuccessSnackBar(context, 'Successfully logged in');
 
@@ -74,8 +79,7 @@ class _LoginPageState extends State<LoginPage> {
             );
           }
           // Default case or AuthInitial
-          return const LoadingIndicator(
-              message: 'Loading saved credentials...');
+          return const LoadingIndicator(message: 'Loading saved credentials...');
         },
       ),
     );
